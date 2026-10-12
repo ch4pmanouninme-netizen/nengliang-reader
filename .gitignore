@@ -1,0 +1,8 @@
+*.exe
+*.pdb
+*.zip
+source/test-results/
+data/
+.vs/
+bin/
+obj/
