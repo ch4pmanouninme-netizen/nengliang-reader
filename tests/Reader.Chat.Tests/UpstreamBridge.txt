@@ -1,0 +1,30 @@
+using System;
+using System.Net;
+using System.Threading;
+using OneLineReader;
+internal static class UpstreamBridge
+{
+    public static int Main()
+    {
+        try
+        {
+            using (var server = new ChatServer("test-room-only"))
+            {
+                server.Start(IPAddress.Loopback, 0);
+                Console.WriteLine(server.Port + "|" + server.Fingerprint);
+                var parts = Console.ReadLine().Split('|');
+                using (var client = new ChatConnection())
+                using (var echo = new ManualResetEvent(false))
+                {
+                    client.Received += p => { if (p.Text == "from-legacy") echo.Set(); };
+                    client.ConnectAsync("127.0.0.1", int.Parse(parts[0]), "Framework", "test-room-only", parts[1]).GetAwaiter().GetResult();
+                    client.SendAsync("from-legacy").GetAwaiter().GetResult();
+                    Console.WriteLine(echo.WaitOne(5000) ? "OK" : "FAIL");
+                    Console.ReadLine();
+                }
+            }
+            return 0;
+        }
+        catch (Exception ex) { Console.WriteLine(ex.ToString()); return 1; }
+    }
+}
