@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><Nullable>disable</Nullable></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../src/Reader.Core/Reader.Core.csproj" /></ItemGroup>
+</Project>
