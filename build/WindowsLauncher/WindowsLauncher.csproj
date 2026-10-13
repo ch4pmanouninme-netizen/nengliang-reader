@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Microsoft.NET.HostModel">
+      <HintPath>$(MSBuildBinPath)/Microsoft.NET.HostModel.dll</HintPath>
+    </Reference>
+    <None Include="$(MSBuildBinPath)/AppHostTemplate/apphost.exe" Link="apphost-template.exe" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
