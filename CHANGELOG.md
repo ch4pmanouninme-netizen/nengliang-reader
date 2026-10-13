@@ -1,5 +1,13 @@
 # 更新日志
 
+## 2.0.1 — 2026-10-13
+
+- Windows ZIP 根目录整理为良子小窗.exe、README.md 和 app 文件夹，使用原生启动入口保留命令行参数及独立服务能力。
+- 两种 macOS DMG 整理为应用、Applications 拖拽安装入口和 README。
+- 补充 unsigned 包的单应用手动放行说明，保留签名、公证和实机验证状态。
+- 增加 Windows 解压包启动回归与 macOS DMG 挂载、目录及架构检查。
+
+
 ## 2.0.0 — 2026-10-13
 
 - 发布 Windows x64、macOS Apple Silicon 和 Intel 跨平台版本。

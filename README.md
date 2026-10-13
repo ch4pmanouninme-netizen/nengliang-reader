@@ -2,7 +2,7 @@
 
 适用于 Windows 和 macOS 的悬浮阅读与局域网加密聊天工具。基于上游 v1.5.2 迁移，保留 TXT / EPUB、进度保存、全局快捷键，并提供链接下载与跨平台书库备份。
 
-**当前版本：2.0.0。** 基于上游 v1.5.2 迁移，原始源码保留在 [`legacy/v1.5.2/`](legacy/v1.5.2/)。Windows 与 macOS 自动构建和回归检查已通过；Mac 实机交互、签名与公证尚未完成，具体限制见下方平台验证状态。
+**当前版本：2.0.1。** 基于上游 v1.5.2 迁移，原始源码保留在 [`legacy/v1.5.2/`](legacy/v1.5.2/)。Windows 与 macOS 自动构建和回归检查已通过；Mac 实机交互、签名与公证尚未完成，具体限制见下方平台验证状态。
 
 [发行版本](https://github.com/ch4pmanouninme-netizen/nengliang-reader/releases) · [提交问题](https://github.com/ch4pmanouninme-netizen/nengliang-reader/issues) · [更新日志](CHANGELOG.md) · [构建与发布](docs/RELEASE.md)
 
@@ -48,11 +48,25 @@ Mac 在 Spaces、全屏应用、睡眠唤醒及不同键盘布局下的行为需
 
 ## 下载与使用
 
-在 [Releases](https://github.com/ch4pmanouninme-netizen/nengliang-reader/releases) 中选择对应平台。选择 v2.0.0 的平台安装包；Source code 为源码归档。
+在 [Releases](https://github.com/ch4pmanouninme-netizen/nengliang-reader/releases) 中选择对应平台。选择 v2.0.1 的平台安装包；Source code 为源码归档。
 
-- Windows：解压 `NengliangReader-win-x64.zip`，运行 `NengliangReader.exe`，保留同目录其他文件。
+- Windows：完整解压 `NengliangReader-win-x64.zip`，运行根目录的 `良子小窗.exe`。根目录仅含 EXE、`README.md` 和 `app/`；请保留 `app/` 与 EXE 的相对位置，可为 EXE 创建桌面快捷方式。旧版发行包的入口仍为 `NengliangReader.exe`。
 - Mac：根据芯片选择 `osx-arm64` 或 `osx-x64`，打开 DMG，将应用复制到“应用程序”。带 `unsigned` 的文件尚未完成 Developer ID 签名与 Apple 公证，系统可能阻止打开；请勿关闭系统安全保护。
 - 本次 Release 的 Mac DMG 由 GitHub macOS runner 构建；自动打包通过不代表已完成 Apple Silicon / Intel 两种真机的交互验收。
+
+### macOS 首次打开（unsigned 包）
+
+两个 Mac DMG 均包含 `良子小窗.app`、`Applications` 快捷入口和 `README.md`。将应用拖入 Applications 后，从“应用程序”启动。
+
+文件名带 `unsigned` 表示尚未完成 Developer ID 分发签名与 Apple 公证。仅在确认安装包来自本仓库且未遭篡改后，对“无法验证开发者”或“Apple 无法检查是否包含恶意软件”的提示，可按以下步骤操作：
+
+1. 先尝试打开应用一次。
+2. 打开“系统设置 → 隐私与安全性”，找到该应用对应的拦截提示，点击“仍要打开”。
+3. 按系统提示验证身份并确认打开。系统会为此应用保存例外，不需要关闭全局安全保护。
+
+该操作不会让应用变成已签名或已公证的软件。若提示“已损坏”“会损坏电脑”或发现恶意软件，请先停止运行、核对下载与校验值并反馈具体错误，不要直接按上述步骤放行。受管理设备可能不允许添加例外。
+
+参考：[Apple 官方首次打开说明](https://support.apple.com/zh-cn/102445)。
 
 ### 本地阅读
 
@@ -69,7 +83,7 @@ Mac 在 Spaces、全屏应用、睡眠唤醒及不同键盘布局下的行为需
 3. 每位参与者从主页进入“聊天”，点击“粘贴连接信息”，填写昵称后连接。
 4. Enter 发送，Shift+Enter 换行；“隐藏”或 Esc 保持连接；关闭聊天或“离开”断开连接并清空本机缓存。
 
-Windows 可双击 `Start-ChatServer.cmd`；从源码可运行 `dotnet run --project src/Reader.Desktop -- --server`。Mac 已安装应用也可通过主页启动独立服务。
+Windows 可通过主页启动独立服务，或运行 `良子小窗.exe --server`；从源码可运行 `dotnet run --project src/Reader.Desktop -- --server`。Mac 已安装应用也可通过主页启动独立服务。
 
 兼容上游 1.5.0 服务与 1.5.2 客户端的协议 v2，**不兼容 1.4 明文协议**。服务窗口内停止/启动保留证书和房间码；关闭后重开会更换，两端需重新分享信息。
 
