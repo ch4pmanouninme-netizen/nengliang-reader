@@ -1,5 +1,12 @@
 # 更新日志
 
+## 2.0.0 — 2026-10-13
+
+- 发布 Windows x64、macOS Apple Silicon 和 Intel 跨平台版本。
+- 包含下列 preview.2 的全部功能，统一项目与发行标签版本号。
+- GitHub Release 使用普通发布类型；macOS 包仍未完成 Developer ID 签名、公证和实机交互验收，Windows 热键、多屏及缩放仍待人工验收。
+- 平台安装包和 SHA256 校验值由 GitHub Actions 生成。
+
 ## 2.0.0-preview.2 — 2026-10-13
 
 - 以上游 v1.5.2（f30b346）为基线，迁移统一主页、独立阅读/聊天生命周期。

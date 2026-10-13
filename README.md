@@ -2,7 +2,7 @@
 
 适用于 Windows 和 macOS 的悬浮阅读与局域网加密聊天工具。基于上游 v1.5.2 迁移，保留 TXT / EPUB、进度保存、全局快捷键，并提供链接下载与跨平台书库备份。
 
-**当前分支：2.0.0-preview.2，跨平台开发预览，尚未发布。** 本次上游基线为 [`f30b346`](https://github.com/ch4pmanouninme-netizen/nengliang-reader/commit/f30b3469879f3d0a72be43557fc2fadb32c1dde2)，Windows Forms v1.5.2 快照保留在 [`legacy/v1.5.2/`](legacy/v1.5.2/)。Mac 原生功能已编写，仍需真机验收；预览包不是已验证的稳定版。
+**当前版本：2.0.0。** 基于上游 v1.5.2 迁移，原始源码保留在 [`legacy/v1.5.2/`](legacy/v1.5.2/)。Windows 与 macOS 自动构建和回归检查已通过；Mac 实机交互、签名与公证尚未完成，具体限制见下方平台验证状态。
 
 [发行版本](https://github.com/ch4pmanouninme-netizen/nengliang-reader/releases) · [提交问题](https://github.com/ch4pmanouninme-netizen/nengliang-reader/issues) · [更新日志](CHANGELOG.md) · [构建与发布](docs/RELEASE.md)
 
@@ -48,11 +48,11 @@ Mac 在 Spaces、全屏应用、睡眠唤醒及不同键盘布局下的行为需
 
 ## 下载与使用
 
-在 [Releases](https://github.com/ch4pmanouninme-netizen/nengliang-reader/releases) 中选择对应平台。若尚无 2.x 包，请按下方步骤从源码运行。
+在 [Releases](https://github.com/ch4pmanouninme-netizen/nengliang-reader/releases) 中选择对应平台。选择 v2.0.0 的平台安装包；Source code 为源码归档。
 
 - Windows：解压 `NengliangReader-win-x64.zip`，运行 `NengliangReader.exe`，保留同目录其他文件。
-- Mac：根据芯片选择 `osx-arm64` 或 `osx-x64`，打开 DMG，将应用复制到“应用程序”。带 `unsigned` 的文件是开发预览，不是已签名公证的正式安装包。
-- 本次交付的 Mac `unsigned.tar.gz` 是交叉构建的 `.app` 归档，在 Mac 解压后用于开发验收；尚未签名、公证或真机运行。正式 DMG 需在 Mac 按发布文档生成。
+- Mac：根据芯片选择 `osx-arm64` 或 `osx-x64`，打开 DMG，将应用复制到“应用程序”。带 `unsigned` 的文件尚未完成 Developer ID 签名与 Apple 公证，系统可能阻止打开；请勿关闭系统安全保护。
+- 本次 Release 的 Mac DMG 由 GitHub macOS runner 构建；自动打包通过不代表已完成 Apple Silicon / Intel 两种真机的交互验收。
 
 ### 本地阅读
 
