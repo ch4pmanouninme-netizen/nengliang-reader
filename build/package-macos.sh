@@ -37,7 +37,13 @@ if [[ -n "${MACOS_SIGN_IDENTITY:-}" ]]; then
   suffix=""
 fi
 dmg="artifacts/NengliangReader-$rid$suffix.dmg"
-hdiutil create -volname '良子阅读器' -srcfolder "artifacts/$rid" -ov -format UDZO "$dmg"
+# A separate staging directory keeps build outputs out of the DMG root.
+dmg_stage="$(mktemp -d "${TMPDIR:-/tmp}/nengliang-dmg.XXXXXX")"
+trap 'rm -rf -- "$dmg_stage"' EXIT
+ditto "$app" "$dmg_stage/良子小窗.app"
+ln -s /Applications "$dmg_stage/Applications"
+cp build/README-macos.md "$dmg_stage/README.md"
+hdiutil create -volname '良子小窗' -srcfolder "$dmg_stage" -ov -format UDZO "$dmg"
 if [[ -n "${MACOS_NOTARY_PROFILE:-}" ]]; then
   [[ -n "${MACOS_SIGN_IDENTITY:-}" ]] || { echo 'Notarization requires MACOS_SIGN_IDENTITY' >&2; exit 1; }
   codesign --timestamp --sign "$MACOS_SIGN_IDENTITY" "$dmg"
