@@ -17,12 +17,14 @@ namespace Reader.Core;
         public float FontSize = 11;
         public string FontName = "Microsoft YaHei UI";
         public string ChatHost = "", ChatNick = "";
+        public string UiTheme = "";
+        public string ReadingThemeId = "";
         public int ChatPort = 38417;
         public bool TopMost = true, Stealth = true, ClickThrough, UiDark;
         public void UsePreset(int theme)
         {
-            Theme = theme; FontSize = theme == 5 ? 10 : 11; Opacity = 100; Stealth = true;
-            if (theme == 4 || theme == 5) UiDark = theme == 5;
+            ReadingThemeId = ""; Theme = theme; FontSize = theme == 5 ? 10 : 11; Opacity = 100; Stealth = true;
+            if (string.IsNullOrEmpty(UiTheme) && (theme == 4 || theme == 5)) UiDark = theme == 5;
         }
     }
 
