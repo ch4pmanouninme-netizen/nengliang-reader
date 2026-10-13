@@ -13,7 +13,8 @@ public sealed class App : Application
 {
     private FileStream? instance;
     private TrayIcon? tray;
-    public override void Initialize() => Styles.Add(new FluentTheme());
+    internal FluentTheme Fluent { get; } = new();
+    public override void Initialize() => Styles.Add(Fluent);
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)

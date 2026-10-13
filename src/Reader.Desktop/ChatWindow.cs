@@ -37,18 +37,31 @@ internal sealed class ChatWindow : Window
     public ChatWindow(Store store, Action save, Action home)
     {
         this.store = store; this.save = save;
-        Title = "良子小窗 · 聊天"; Width = 640; Height = 680; MinWidth = 480; MinHeight = 560;
+        Title = "良子小窗 · 聊天"; Width = 640; Height = 680; MinWidth = 0; MinHeight = 0; CanResize = true;
         host.Text = store.Pref.ChatHost; nick.Text = store.Pref.ChatNick; port.Text = store.Pref.ChatPort.ToString();
         var top = new StackPanel { Spacing = 8 };
-        var navigation = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var navigation = new WrapPanel { Orientation = Orientation.Horizontal };
         navigation.Children.Add(UiActions.Button("主页", home)); navigation.Children.Add(UiActions.Button("隐藏", Hide)); navigation.Children.Add(paste);
-        top.Children.Add(navigation);
-        top.Children.Add(UiActions.Row(UiActions.Labeled("服务地址", host), UiActions.Labeled("端口", port)));
-        top.Children.Add(UiActions.Row(UiActions.Labeled("昵称", nick), UiActions.Labeled("房间码", code))); top.Children.Add(UiActions.Labeled("SHA-256 服务指纹", pin));
+        top.Children.Add(UiThemes.Header(navigation));
+        var connectionFields = new StackPanel { Spacing = 8 };
+        connectionFields.Children.Add(UiActions.Row(UiActions.Labeled("服务地址", host), UiActions.Labeled("端口", port)));
+        connectionFields.Children.Add(UiActions.Row(UiActions.Labeled("昵称", nick), UiActions.Labeled("房间码", code)));
+        connectionFields.Children.Add(UiActions.Labeled("SHA-256 服务指纹", pin));
+        top.Children.Add(new Expander { Header = "连接设置", IsExpanded = true, HorizontalAlignment = HorizontalAlignment.Stretch, Content = connectionFields });
         top.Children.Add(connect); top.Children.Add(state);
         var bottom = new StackPanel { Spacing = 8, Margin = new Thickness(0, 10, 0, 0), Children = { compose, send } };
-        var root = new DockPanel { Margin = new Thickness(20) };
-        DockPanel.SetDock(top, Dock.Top); root.Children.Add(top); DockPanel.SetDock(bottom, Dock.Bottom); root.Children.Add(bottom); root.Children.Add(transcript); Content = root;
+        var root = new Grid { Margin = new Thickness(8), MinWidth = 240, RowDefinitions = new RowDefinitions("Auto,*,Auto") };
+        transcript.MinHeight = 80;
+        root.Children.Add(top); Grid.SetRow(transcript, 1); root.Children.Add(transcript); Grid.SetRow(bottom, 2); root.Children.Add(bottom);
+        // Keep all controls reachable when the window is smaller than its content.
+        var viewport = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            Content = root
+        };
+        viewport.SizeChanged += (_, _) => root.MinHeight = Math.Max(0, viewport.Bounds.Height - 16);
+        Content = viewport;
         connect.Click += async (_, _) => { if (wanted) Leave(); else { wanted = true; await Join(); } };
         send.Click += async (_, _) => await Send();
         paste.Click += async (_, _) =>

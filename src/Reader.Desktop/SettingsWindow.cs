@@ -12,7 +12,9 @@ internal sealed class SettingsWindow : Window
         Title = "阅读设置"; Width = 470; Height = 610; MinWidth = 400; MinHeight = 400;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var rows = new StackPanel { Margin = new Thickness(24), Spacing = 12 };
-        var theme = new ComboBox { ItemsSource = new[] { "浅色", "深色", "暖纸", "灰色", "企业微信浅色", "IDEA 深色", "透明文字" }, SelectedIndex = preferences.Theme, HorizontalAlignment = HorizontalAlignment.Stretch };
+        string[] legacyThemes = { "浅色", "柔和深灰", "暖纸", "灰色", "企业微信浅色", "IDEA / PyCharm Darcula 风格", "透明文字", "VS Code Dark+ 风格", "One Dark 蓝灰", "柔和午夜蓝", "VS Code · 2026 深色", "PyCharm · 新版 Dark" };
+        var officialIndex = Array.FindIndex(UiThemes.Official, x => x.Id == preferences.ReadingThemeId);
+        var theme = new ComboBox { ItemsSource = legacyThemes.Concat(UiThemes.Official.Select(x => x.Group + " · " + x.Name)).ToArray(), SelectedIndex = officialIndex >= 0 ? legacyThemes.Length + officialIndex : preferences.Theme, HorizontalAlignment = HorizontalAlignment.Stretch };
         var font = new TextBox { Text = preferences.FontName };
         var size = Number(preferences.FontSize, 9, 32);
         var lines = Number(preferences.LineCount, 1, 10);
@@ -26,12 +28,14 @@ internal sealed class SettingsWindow : Window
         var save = new Button { Content = "保存设置", IsDefault = true };
         save.Click += (_, _) =>
         {
-            preferences.Theme = theme.SelectedIndex;
+            if (theme.SelectedIndex < legacyThemes.Length) { preferences.Theme = Math.Max(0, theme.SelectedIndex); preferences.ReadingThemeId = ""; }
+            else preferences.ReadingThemeId = UiThemes.Official[theme.SelectedIndex - legacyThemes.Length].Id;
             preferences.FontName = string.IsNullOrWhiteSpace(font.Text) ? "sans-serif" : font.Text.Trim();
             preferences.FontSize = (float)(size.Value ?? 14); preferences.LineCount = (int)(lines.Value ?? 1);
             preferences.Opacity = (int)(opacity.Value ?? 100); preferences.Seconds = (int)(seconds.Value ?? 6);
             preferences.TopMost = top.IsChecked == true; preferences.Stealth = minimal.IsChecked == true;
-            preferences.UiDark = preferences.Theme is 1 or 5; Close(true);
+            if (string.IsNullOrEmpty(preferences.UiTheme)) preferences.UiDark = UiThemes.Official.FirstOrDefault(x => x.Id == preferences.ReadingThemeId)?.Dark ?? (preferences.Theme is 1 or 5 or >= 7);
+            Close(true);
         };
         var cancel = new Button { Content = "取消", IsCancel = true };
         cancel.Click += (_, _) => Close(false);
