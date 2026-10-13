@@ -2,13 +2,13 @@
 
 适用于 Windows 和 macOS 的悬浮阅读与局域网加密聊天工具。基于上游 v1.5.2 迁移，保留 TXT / EPUB、进度保存、全局快捷键，并提供链接下载与跨平台书库备份。
 
-**当前版本：2.1.0。** 基于上游 v1.5.2 迁移，原始源码保留在 [`legacy/v1.5.2/`](legacy/v1.5.2/)。Windows 与 macOS 自动构建和回归检查已通过；Mac 实机交互、签名与公证尚未完成，具体限制见下方平台验证状态。
+**当前版本：2.2.0。** 基于上游 v1.5.2 迁移，原始源码保留在 [`legacy/v1.5.2/`](legacy/v1.5.2/)。Windows 与 macOS 自动构建和回归检查已通过；Mac 实机交互、签名与公证尚未完成，具体限制见下方平台验证状态。
 
 [发行版本](https://github.com/ch4pmanouninme-netizen/nengliang-reader/releases) · [提交问题](https://github.com/ch4pmanouninme-netizen/nengliang-reader/issues) · [更新日志](CHANGELOG.md) · [构建与发布](docs/RELEASE.md)
 
 ## 功能
 
-开发中（尚未包含在 v2.1.0 安装包）：新增 VS Code 的 19 个与 JetBrains 的 8 个官方内置主题，按软件分组选择；阅读条也可独立选择这 27 套主题。选择自动保存，并保留原有自定义配色及旧配置兼容。来源、完整清单与映射范围见 [官方主题配色](docs/EDITOR-THEMES.md)。
+v2.2.0 新增：新增 VS Code 的 19 个与 JetBrains 的 8 个官方内置主题，按软件分组选择；阅读条也可独立选择这 27 套主题。选择自动保存，并保留原有自定义配色及旧配置兼容。来源、完整清单与映射范围见 [官方主题配色](docs/EDITOR-THEMES.md)。
 
 - **统一主页**：阅读和聊天独立开关，关闭主页收进托盘，明确退出才关闭客户端。
 - **加密聊天**：兼容上游 v1.5 协议，TLS 1.2、SHA-256 指纹校验、限流、有界缓存、自动重连。
