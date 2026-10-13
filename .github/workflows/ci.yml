@@ -21,6 +21,9 @@ jobs:
       - run: dotnet build NengliangReader.sln -c Release --no-restore
       - run: dotnet run --project tests/Reader.Core.Tests -c Release --no-build
       - run: dotnet run --project tests/Reader.Chat.Tests -c Release --no-build
+      - name: Chat window resize and keyboard regression
+        if: runner.os == 'Windows'
+        run: dotnet run --project tests/Reader.ChatUi.Tests -c Release
       - name: Upstream Windows interoperability
         if: runner.os == 'Windows'
         shell: pwsh

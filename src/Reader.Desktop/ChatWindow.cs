@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -18,7 +19,7 @@ internal sealed class ChatWindow : Window
     private readonly TextBox nick = new() { Watermark = "昵称", MaxLength = 20 };
     private readonly TextBox code = new() { Watermark = "房间码", MaxLength = 64, PasswordChar = '●' };
     private readonly TextBox pin = new() { Watermark = "SHA-256 服务指纹", MaxLength = 64 };
-    private readonly TextBox compose = new() { Watermark = "Enter 发送，Shift+Enter 换行", AcceptsReturn = true, MaxLength = 500, MinHeight = 70 };
+    private readonly TextBox compose = new() { Watermark = "Enter 发送，Shift+Enter 换行", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxLength = 500, MinHeight = 70, MaxHeight = 120 };
     private readonly TextBlock state = new() { Text = "未连接", TextWrapping = TextWrapping.Wrap };
     private readonly TextBox transcript = new() { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap };
     private readonly Button connect = new() { Content = "连接" }, send = new() { Content = "发送" }, paste = new() { Content = "粘贴连接信息" };
@@ -60,7 +61,18 @@ internal sealed class ChatWindow : Window
             VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
             Content = root
         };
-        viewport.SizeChanged += (_, _) => root.MinHeight = Math.Max(0, viewport.Bounds.Height - 16);
+        // A scroll viewer measures unconstrained axes with infinity. Give the grid
+        // a finite viewport so history wraps and scrolls inside its own TextBox.
+        // Only very small windows scroll the whole form to keep controls reachable.
+        void FitViewport()
+        {
+            double width = Math.Max(240, viewport.Bounds.Width - 16);
+            double height = Math.Max(top.DesiredSize.Height + bottom.DesiredSize.Height + 80, viewport.Bounds.Height - 16);
+            if (root.Width != width) root.Width = width;
+            if (root.Height != height) root.Height = height;
+        }
+        viewport.SizeChanged += (_, _) => FitViewport();
+        root.LayoutUpdated += (_, _) => FitViewport();
         Content = viewport;
         connect.Click += async (_, _) => { if (wanted) Leave(); else { wanted = true; await Join(); } };
         send.Click += async (_, _) => await Send();
@@ -77,7 +89,8 @@ internal sealed class ChatWindow : Window
             }
             catch (Exception ex) { state.Text = ex.Message; }
         };
-        compose.KeyDown += async (_, e) => { if (e.Key == Key.Enter && !e.KeyModifiers.HasFlag(KeyModifiers.Shift)) { e.Handled = true; await Send(); } };
+        // Intercept Enter before the multiline TextBox consumes it as a newline.
+        compose.AddHandler(InputElement.KeyDownEvent, async (_, e) => { if (e.Key == Key.Enter && !e.KeyModifiers.HasFlag(KeyModifiers.Shift)) { e.Handled = true; await Send(); } }, RoutingStrategies.Tunnel);
         KeyDown += (_, e) => { if (e.Key == Key.Escape) { Hide(); e.Handled = true; } };
         timer.Tick += async (_, _) =>
         {
