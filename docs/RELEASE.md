@@ -28,6 +28,7 @@ Windows，使用 PowerShell 7：
 
 ```powershell
 ./build/package-windows.ps1
+./tests/Test-WindowsPackage.ps1 -Package ./artifacts/NengliangReader-win-x64.zip
 ```
 
 macOS，在 Mac 上执行：
@@ -38,6 +39,10 @@ bash build/package-macos.sh osx-x64
 ```
 
 输出到 `artifacts/`。Mac 构建包含 `.app` 和 DMG；Intel 与 Apple Silicon 分开发行。跨架构构建只验证打包，不等于在对应架构运行过。
+
+Windows ZIP 根目录仅包含 `良子小窗.exe`、`README.md` 和 `app/`。SDK 原生 apphost 直接加载 `app/NengliangReader.dll`，保留命令行参数和退出码，不启动额外的代理进程；根目录 EXE 可用于桌面快捷方式和 `--server`。依赖、许可证与完整文档位于 `app/`。每次打包使用独立目录，防止旧的平铺文件混入 ZIP。请在 Windows x64 上运行打包脚本。
+
+DMG 根目录仅包含 `良子小窗.app`、指向 `/Applications` 的 `Applications` 快捷入口和 `README.md` 安装说明。用户将应用拖入快捷入口即可安装；运行依赖放在应用包的 `Contents/MacOS`，资源、许可证和完整文档放在 `Contents/Resources`。DMG 使用独立临时目录组装，避免混入其他构建输出。
 
 ## macOS 签名与公证
 
@@ -109,3 +114,7 @@ dotnet run --project tests/Reader.Chat.Tests -c Release -- artifacts/upstream-br
 - [ ] 客户端退出后独立服务继续运行；关闭聊天后在线人数下降。
 - [ ] 上游 1.5 书库迁移后地址/昵称保留，房间码和聊天内容不落盘。
 
+
+## unsigned 包发布
+
+保留 unsigned 文件名，并在安装包 README 和 Release 中披露尚未签名、公证的状态。对可信且未篡改的应用，可由使用者按 README 在“隐私与安全性”中选择“仍要打开”；不提供关闭全局安全保护或批量移除隔离标记的脚本。损坏、恶意软件等提示应先诊断。
