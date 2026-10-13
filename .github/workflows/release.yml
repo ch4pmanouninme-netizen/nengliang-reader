@@ -1,4 +1,4 @@
-name: Draft preview release
+name: Build release draft
 on:
   push:
     tags: ['v*']
@@ -46,24 +46,26 @@ jobs:
             artifacts/*.dmg
           if-no-files-found: error
   draft:
-    if: startsWith(github.ref, 'refs/tags/')
     needs: package
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: packages
           merge-multiple: true
-      - name: Create draft with checksums
+      - name: Create release draft with checksums
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          TARGET_SHA: ${{ github.sha }}
         shell: bash
         run: |
+          version="$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' Directory.Build.props | tr -d '\r')"
+          RELEASE_TAG="v$version"
           cd packages
           sha256sum *.zip *.dmg > SHA256SUMS.txt
-          printf '%s\n' '跨平台开发预览。Mac 包尚未签名公证，请维护者完成真机验收并替换正式资产后再公开。详见 docs/RELEASE.md。' > notes.md
-          gh release create "$RELEASE_TAG" *.zip *.dmg SHA256SUMS.txt --verify-tag --draft --prerelease --title "$RELEASE_TAG" --notes-file notes.md
+          printf '%s\n' 'Windows/macOS 跨平台版本。macOS 包尚未完成 Developer ID 签名、公证及实机交互验收；请在发行说明中明确这些限制。' > notes.md
+          gh release create "$RELEASE_TAG" *.zip *.dmg SHA256SUMS.txt --target "$TARGET_SHA" --draft --title "$RELEASE_TAG" --notes-file notes.md
