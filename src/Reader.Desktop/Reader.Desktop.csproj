@@ -5,6 +5,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="OfficialThemes.json" LogicalName="Reader.Desktop.OfficialThemes.json" />
     <ProjectReference Include="../Reader.Chat/Reader.Chat.csproj" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />

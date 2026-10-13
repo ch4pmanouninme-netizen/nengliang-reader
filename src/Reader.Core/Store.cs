@@ -71,14 +71,16 @@ namespace Reader.Core;
                 Pref.Seconds = Clamp(Number(p, "seconds", 6), 2, 60);
                 Pref.LineCount = Clamp(Number(p, "lineCount", 1), 1, 10);
                 Pref.Opacity = Clamp(Number(p, "opacity", 100), 30, 100);
-                Pref.Theme = Clamp(Number(p, "theme", 4), 0, 6);
+                Pref.Theme = Clamp(Number(p, "theme", 4), 0, 11);
                 Pref.FontSize = Clamp(Number(p, "fontSize", 11), 9, 32);
                 Pref.FontName = (string)p.Attribute("fontName") ?? "Microsoft YaHei UI";
                 Pref.TopMost = (string)p.Attribute("topMost") != "false";
                 Pref.Stealth = (string)p.Attribute("stealth") != "false";
                 Pref.ClickThrough = (string)p.Attribute("clickThrough") == "true";
-                Pref.UiDark = (string)p.Attribute("uiDark") == null ? Pref.Theme == 1 || Pref.Theme == 5 : (string)p.Attribute("uiDark") == "true";
+                Pref.UiDark = (string)p.Attribute("uiDark") == null ? Pref.Theme is 1 or 5 or >= 7 : (string)p.Attribute("uiDark") == "true";
                 Pref.ChatHost = (string)p.Attribute("chatHost") ?? "";
+                Pref.UiTheme = (string)p.Attribute("uiTheme") ?? "";
+                Pref.ReadingThemeId = (string)p.Attribute("readingThemeId") ?? "";
                 Pref.ChatNick = (string)p.Attribute("chatNick") ?? "";
                 Pref.ChatPort = Clamp(Number(p, "chatPort", 38417), 1, 65535);
             }
@@ -131,7 +133,7 @@ namespace Reader.Core;
                 new XElement("preferences", new XAttribute("width", Pref.Width), new XAttribute("x", Pref.X), new XAttribute("y", Pref.Y), new XAttribute("hasPosition", Pref.HasPosition),
                     new XAttribute("seconds", Pref.Seconds), new XAttribute("lineCount", Pref.LineCount), new XAttribute("opacity", Pref.Opacity), new XAttribute("theme", Pref.Theme),
                     new XAttribute("fontSize", (int)Pref.FontSize), new XAttribute("fontName", Pref.FontName), new XAttribute("topMost", Pref.TopMost ? "true" : "false"),
-                    new XAttribute("chatHost", Pref.ChatHost), new XAttribute("chatNick", Pref.ChatNick), new XAttribute("chatPort", Pref.ChatPort),
+                    new XAttribute("chatHost", Pref.ChatHost), new XAttribute("chatNick", Pref.ChatNick), new XAttribute("chatPort", Pref.ChatPort), new XAttribute("uiTheme", Pref.UiTheme), new XAttribute("readingThemeId", Pref.ReadingThemeId),
                     new XAttribute("stealth", Pref.Stealth ? "true" : "false"), new XAttribute("clickThrough", Pref.ClickThrough ? "true" : "false"), new XAttribute("uiDark", Pref.UiDark ? "true" : "false")));
             foreach (Book b in Books) root.Add(new XElement("book", new XAttribute("id", b.Id), new XAttribute("title", b.Title), new XAttribute("format", b.Format), new XAttribute("position", b.Position), new XAttribute("bookmark", b.Bookmark), new XAttribute("length", b.Length), new XAttribute("completed", b.Completed ? "true" : "false")));
             return root;

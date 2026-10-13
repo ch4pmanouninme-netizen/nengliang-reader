@@ -131,16 +131,17 @@ internal sealed class ServerWindow : Window
         try
         {
             string path = Path.Combine(Program.DataDirectory ?? DataPaths.Default, "state.xml");
-            bool? dark = await Task.Run<bool?>(() =>
+            Preferences? appearance = await Task.Run<Preferences?>(() =>
             {
                 var info = new FileInfo(path); if (!info.Exists) return null;
                 var stamp = (info.LastWriteTimeUtc, info.Length); if (themeStamp == stamp) return null;
                 using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
                 using var xml = XmlReader.Create(file, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, MaxCharactersInDocument = 4 * 1024 * 1024 });
                 var pref = XDocument.Load(xml).Root?.Element("preferences");
-                themeStamp = stamp; return pref == null ? null : (string?)pref.Attribute("uiDark") == "true";
+                themeStamp = stamp;
+                return pref == null ? null : new Preferences { UiDark = (string?)pref.Attribute("uiDark") == "true", UiTheme = (string?)pref.Attribute("uiTheme") ?? "" };
             });
-            if (!closed && dark.HasValue) RequestedThemeVariant = dark.Value ? ThemeVariant.Dark : ThemeVariant.Light;
+            if (!closed && appearance != null) UiThemes.Apply(appearance);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or XmlException) { /* Keep last appearance during an atomic save. */ }
         finally { readingTheme = false; }

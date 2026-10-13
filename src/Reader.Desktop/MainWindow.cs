@@ -307,7 +307,7 @@ internal sealed class MainWindow : Window
         finally { dialogOpen = false; }
     }
 
-    private void ApplyTheme() => RequestedThemeVariant = store.Pref.UiDark ? ThemeVariant.Dark : ThemeVariant.Light;
+    private void ApplyTheme() => RequestedThemeVariant = UiThemes.Resolve(store.Pref).Dark ? ThemeVariant.Dark : ThemeVariant.Light;
     private void MarkDirty() { dirty = true; revision++; }
     private void Save() => _ = SaveAsync();
     private Task<bool> SaveAsync()

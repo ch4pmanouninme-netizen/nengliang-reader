@@ -21,10 +21,10 @@ internal sealed class HomeWindow : Window
         this.store = store; this.library = library;
         Title = "良子小窗"; Width = 480; Height = 360; MinWidth = 420; MinHeight = 300;
         var panel = new StackPanel { Margin = new Thickness(30), Spacing = 14 };
-        panel.Children.Add(new TextBlock { Text = "良子小窗", FontSize = 28 });
+        panel.Children.Add(UiThemes.Header(new TextBlock { Text = "良子小窗", FontSize = 28 }));
         panel.Children.Add(new TextBlock { Text = "阅读与加密聊天，各自打开，随时回到主页。", TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(UiActions.Row(UiActions.Button("阅读", library.RestoreLibrary), UiActions.Button("聊天", OpenChat)));
-        panel.Children.Add(UiActions.Row(UiActions.Button("启动独立聊天服务", StartServer), UiActions.Button("切换深浅主题", () => { store.Pref.UiDark = !store.Pref.UiDark; library.SavePreferences(); ApplyTheme(); })));
+        panel.Children.Add(UiActions.Row(UiActions.Button("启动独立聊天服务", StartServer), UiThemes.CreatePicker(store.Pref, () => { library.SavePreferences(); ApplyTheme(); })));
         panel.Children.Add(new TextBlock { Text = "关闭主页会收进托盘。聊天窗口关闭后断开，隐藏时保持连接。", TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(UiActions.Button("退出良子小窗", library.RequestExit)); Content = panel;
         library.ShowHome = Restore; library.HideAll = ToggleVisibility; library.ThemeChanged = ApplyTheme;
@@ -66,7 +66,7 @@ internal sealed class HomeWindow : Window
     private void RemoveHidden(object? sender, EventArgs e) { if (sender is Window window) hidden.Remove(window); }
     public void ApplyTheme()
     {
-        if (Application.Current != null) Application.Current.RequestedThemeVariant = store.Pref.UiDark ? ThemeVariant.Dark : ThemeVariant.Light;
+        UiThemes.Apply(store.Pref);
         library.RefreshTheme();
     }
     public void DisposeModules() { exiting = true; hidden.Clear(); chat?.Close(); library.DisposeServices(); }

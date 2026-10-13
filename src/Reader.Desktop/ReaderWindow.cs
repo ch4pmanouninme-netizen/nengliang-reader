@@ -101,11 +101,14 @@ internal sealed class ReaderWindow : Window
         try
         {
             Pause(); session.ClearHistory(); Topmost = preferences.TopMost; Opacity = preferences.Opacity / 100.0;
-            Color[] colors = [Color.Parse("#f8f9f6"), Color.Parse("#202424"), Color.Parse("#f7efda"), Color.Parse("#e1e5e6"), Color.Parse("#f5f7fa"), Color.Parse("#191a1c"), Colors.Transparent];
-            Background = new SolidColorBrush(colors[preferences.Theme]);
+            Color[] colors = [Color.Parse("#f8f9f6"), Color.Parse("#303238"), Color.Parse("#f7efda"), Color.Parse("#e1e5e6"), Color.Parse("#f5f7fa"), Color.Parse("#2b2b2b"), Colors.Transparent, Color.Parse("#252526"), Color.Parse("#282c34"), Color.Parse("#253247"), Color.Parse("#121314"), Color.Parse("#1E1F22")];
+            var official = UiThemes.Official.FirstOrDefault(x => x.Id == preferences.ReadingThemeId);
+            Background = new SolidColorBrush(official == null ? colors[Math.Clamp(preferences.Theme, 0, colors.Length - 1)] : Color.Parse(official.Background));
             surface.Typeface = new Typeface(preferences.FontName);
             surface.FontSize = preferences.FontSize * 96 / 72;
-            surface.Ink = preferences.Theme is 1 or 5 ? Brushes.LightGray : Brushes.DimGray;
+            bool dark = official?.Dark ?? (preferences.Theme is 1 or 5 or >= 7);
+            surface.Ink = new SolidColorBrush(Color.Parse(official?.EditorForeground ?? (preferences.Theme switch { 8 => "#ABB2BF", 10 => "#BBBEBF", 11 => "#BCBEC4", _ => dark ? "#D4D4D4" : "#696969" })));
+            footer.Foreground = new SolidColorBrush(Color.Parse(official?.EditorForeground ?? (dark ? "#AAB2C0" : "#696969")));
             footer.IsVisible = !preferences.Stealth;
             Height = surface.LineHeight * preferences.LineCount + 12 + (preferences.Stealth ? 0 : 18);
             auto.Interval = TimeSpan.FromSeconds(preferences.Seconds);
