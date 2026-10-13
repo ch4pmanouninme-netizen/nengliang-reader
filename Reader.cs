@@ -14,9 +14,9 @@ using System.Windows.Forms;
 using System.Xml;
 using System.Xml.Linq;
 
-[assembly: System.Reflection.AssemblyTitle("良子阅读器")]
-[assembly: System.Reflection.AssemblyProduct("良子阅读器")]
-[assembly: System.Reflection.AssemblyVersion("1.3.1.0")]
+[assembly: System.Reflection.AssemblyTitle("良子小窗")]
+[assembly: System.Reflection.AssemblyProduct("良子小窗")]
+[assembly: System.Reflection.AssemblyVersion("1.5.2.0")]
 
 namespace OneLineReader
 {
@@ -36,17 +36,17 @@ namespace OneLineReader
                 {
                     if (dataArg < 0) MigrateLegacyData(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data"), data);
                     Store store = new Store(data);
-                    Application.Run(new LibraryForm(store));
+                    using (AppController app = new AppController(store)) Application.Run(app);
                 }
                 return 0;
             }
             catch (IOException ex)
             {
-                MessageBox.Show("无法打开阅读器的数据目录。请确认没有重复运行，且本机应用数据目录可以写入。\n\n" + ex.Message, "良子阅读器 · 启动失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("无法打开阅读器的数据目录。请确认没有重复运行，且本机应用数据目录可以写入。\n\n" + ex.Message, "良子小窗 · 启动失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             catch (Exception ex)
             {
-                MessageBox.Show("启动失败：" + ex.Message, "良子阅读器", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("启动失败：" + ex.Message, "良子小窗", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             return 1;
         }
@@ -80,6 +80,8 @@ namespace OneLineReader
         public int Width = 560, X = -1, Y = -1, Seconds = 6, Opacity = 100, Theme = 4, LineCount = 1;
         public float FontSize = 11;
         public string FontName = "Microsoft YaHei UI";
+        public string ChatHost = "", ChatNick = "";
+        public int ChatPort = 38417;
         public bool TopMost = true, Stealth = true, ClickThrough, UiDark;
         public void UsePreset(int theme)
         {
@@ -146,6 +148,9 @@ namespace OneLineReader
                 Pref.X = Number(p, "x", -1); Pref.Y = Number(p, "y", -1);
                 Pref.Seconds = Clamp(Number(p, "seconds", 6), 2, 60);
                 Pref.LineCount = Clamp(Number(p, "lineCount", 1), 1, 10);
+                Pref.ChatHost = (string)p.Attribute("chatHost") ?? "";
+                Pref.ChatNick = (string)p.Attribute("chatNick") ?? "";
+                Pref.ChatPort = Clamp(Number(p, "chatPort", 38417), 1, 65535);
                 Pref.Opacity = Clamp(Number(p, "opacity", 100), 30, 100);
                 Pref.Theme = Clamp(Number(p, "theme", 4), 0, 6);
                 Pref.FontSize = Clamp(Number(p, "fontSize", 11), 9, 32);
@@ -186,6 +191,7 @@ namespace OneLineReader
             XElement root = new XElement("reader", new XAttribute("version", "1"), new XAttribute("last", LastId),
                 new XElement("preferences", new XAttribute("width", Pref.Width), new XAttribute("x", Pref.X), new XAttribute("y", Pref.Y),
                     new XAttribute("seconds", Pref.Seconds), new XAttribute("lineCount", Pref.LineCount), new XAttribute("opacity", Pref.Opacity), new XAttribute("theme", Pref.Theme),
+                    new XAttribute("chatHost", Pref.ChatHost), new XAttribute("chatNick", Pref.ChatNick), new XAttribute("chatPort", Pref.ChatPort),
                     new XAttribute("fontSize", (int)Pref.FontSize), new XAttribute("fontName", Pref.FontName), new XAttribute("topMost", Pref.TopMost ? "true" : "false"),
                     new XAttribute("stealth", Pref.Stealth ? "true" : "false"), new XAttribute("clickThrough", Pref.ClickThrough ? "true" : "false"), new XAttribute("uiDark", Pref.UiDark ? "true" : "false")));
             foreach (Book b in Books) root.Add(new XElement("book", new XAttribute("id", b.Id), new XAttribute("title", b.Title), new XAttribute("format", b.Format), new XAttribute("position", b.Position), new XAttribute("bookmark", b.Bookmark), new XAttribute("length", b.Length), new XAttribute("completed", b.Completed ? "true" : "false")));
@@ -402,45 +408,6 @@ namespace OneLineReader
         public int Percent { get { return Book.Completed ? 100 : (Text.Length <= 1 ? 0 : (int)(100.0 * Position / (Text.Length - 1))); } }
     }
 
-    internal static class Ui
-    {
-        public static readonly Color Ink = Color.FromArgb(37, 47, 43), Muted = Color.FromArgb(117, 126, 119), Green = Color.FromArgb(41, 91, 70), Paper = Color.FromArgb(247, 248, 244), Line = Color.FromArgb(224, 229, 221);
-        public static Font Font(float size, FontStyle style = FontStyle.Regular) { return new Font("Microsoft YaHei UI", size, style); }
-        public static Label Label(string text, int x, int y, int w, int h, float size, Color color, FontStyle style = FontStyle.Regular)
-        {
-            return new Label { Text = text, Bounds = new Rectangle(x, y, w, h), Font = Font(size, style), ForeColor = color, BackColor = Color.Transparent, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
-        }
-        public static Button Button(string text, int x, int y, int w, int h, bool primary)
-        {
-            Button b = new Button { Text = text, Bounds = new Rectangle(x, y, w, h), FlatStyle = FlatStyle.Flat, Font = Font(10), BackColor = primary ? Green : Color.White, ForeColor = primary ? Color.White : Ink, Cursor = Cursors.Hand, UseVisualStyleBackColor = false };
-            b.FlatAppearance.BorderColor = primary ? Green : Line; b.FlatAppearance.BorderSize = primary ? 0 : 1;
-            return b;
-        }
-        public static Color Surface(bool dark) { return dark ? Color.FromArgb(25, 26, 28) : Color.FromArgb(245, 247, 250); }
-        public static Color TextColor(bool dark) { return dark ? Color.FromArgb(182, 186, 194) : Color.FromArgb(64, 69, 76); }
-        public static Color MutedColor(bool dark) { return dark ? Color.FromArgb(127, 133, 141) : Color.FromArgb(138, 144, 153); }
-        public static void Skin(Control root, bool dark)
-        {
-            root.ForeColor = TextColor(dark);
-            root.BackColor = root.Name == "header" ? (dark ? Color.FromArgb(37, 40, 44) : Color.FromArgb(237, 240, 244))
-                : root.Name == "side" ? (dark ? Color.FromArgb(32, 33, 36) : Color.FromArgb(235, 238, 242))
-                : root.Name == "preview" ? (dark ? Surface(true) : Color.White) : root.Parent == null ? Surface(dark) : root.Parent.BackColor;
-            Label label = root as Label;
-            if (label != null) { root.BackColor = Color.Transparent; if (root.Font.Size <= 9) root.ForeColor = MutedColor(dark); }
-            Button button = root as Button;
-            if (button != null)
-            {
-                button.BackColor = dark ? Color.FromArgb(43, 45, 48) : Color.FromArgb(248, 249, 251);
-                button.FlatAppearance.BorderSize = 1;
-                button.FlatAppearance.BorderColor = dark ? Color.FromArgb(54, 57, 61) : Color.FromArgb(217, 222, 228);
-                button.FlatAppearance.MouseOverBackColor = dark ? Color.FromArgb(54, 57, 61) : Color.FromArgb(231, 235, 241);
-            }
-            ComboBox combo = root as ComboBox;
-            if (combo != null) { combo.FlatStyle = FlatStyle.Flat; combo.BackColor = dark ? Color.FromArgb(43, 45, 48) : Color.FromArgb(248, 249, 251); }
-            foreach (Control child in root.Controls) Skin(child, dark);
-        }
-    }
-
     internal sealed class QuietTrackBar : Control
     {
         private int value;
@@ -475,6 +442,7 @@ namespace OneLineReader
     internal sealed class LibraryForm : Form
     {
         private readonly Store store;
+        private readonly AppController app;
         private readonly ListBox books = new ListBox();
         private readonly Label title, metadata, progress, status;
         private readonly Label preview, hotkeyInfo;
@@ -484,15 +452,17 @@ namespace OneLineReader
         private readonly NotifyIcon tray;
         private readonly Timer saveTimer = new Timer();
         private ReaderForm reader;
+        private ChatForm chat;
         private ReadingSession session;
         private bool dirty, busy, allowExit, saveWarning;
         private string hideShortcut = "Ctrl + Alt + H", mouseShortcut = "Ctrl + Alt + M";
         private string HotkeyCaption { get { return (hideShortcut.Length > 0 ? hideShortcut + " 隐藏 / 恢复" : "Esc 隐藏 / 托盘恢复") + "   ·   " + (mouseShortcut.Length > 0 ? mouseShortcut + " 穿透开关" : "托盘切换穿透"); } }
         private readonly List<int> registeredKeys = new List<int>();
 
-        public LibraryForm(Store store)
+        public LibraryForm(Store store) : this(store, null) { }
+        internal LibraryForm(Store store, AppController app)
         {
-            this.store = store;
+            this.store = store; this.app = app;
             Text = "文档"; FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; ClientSize = new Size(620, 360); MinimumSize = Size; MaximumSize = Size;
             StartPosition = FormStartPosition.CenterScreen; Font = Ui.Font(9); AutoScaleMode = AutoScaleMode.None; AllowDrop = true; Icon = MakeIcon(); DoubleBuffered = true;
             Panel header = new Panel { Name = "header", Bounds = new Rectangle(1, 1, 618, 34) }; Controls.Add(header);
@@ -502,7 +472,7 @@ namespace OneLineReader
             appearance = Ui.Button("企业微信 · 浅色 ⇄", 402, 4, 140, 25, false); appearance.Font = Ui.Font(9); header.Controls.Add(appearance);
             appearance.Click += (s, e) => UsePreset(store.Pref.UiDark ? 4 : 5);
             Button hide = Ui.Button("—", 552, 4, 26, 25, false); hide.Click += (s, e) => Hide(); header.Controls.Add(hide);
-            Button close = Ui.Button("×", 584, 4, 26, 25, false); close.Click += (s, e) => ExitApp(); header.Controls.Add(close);
+            Button close = Ui.Button("×", 584, 4, 26, 25, false); close.Name = "CloseReading"; close.Click += (s, e) => CloseReading(); header.Controls.Add(close);
             Panel side = new Panel { Name = "side", Bounds = new Rectangle(12, 48, 158, 232) };
             Controls.Add(side);
             side.Controls.Add(Ui.Label("最近文档", 10, 5, 138, 23, 9, Ui.Muted));
@@ -522,18 +492,21 @@ namespace OneLineReader
             start = Ui.Button("显示", 98, 293, 76, 28, false); start.Click += (s, e) => StartReading(); Controls.Add(start);
             Button settings = Ui.Button("设置", 184, 293, 76, 28, false); settings.Click += (s, e) => OpenSettings(); Controls.Add(settings);
             Button demo = Ui.Button("示例", 270, 293, 76, 28, false); demo.Click += (s, e) => AddDemo(); Controls.Add(demo);
+            Button home = Ui.Button("主页", 356, 293, 76, 28, false); home.Name = "Home"; home.Click += (s, e) => ReturnHome(); Controls.Add(home);
             hotkeyInfo = Ui.Label(HotkeyCaption, 12, 330, 596, 20, 8, Ui.Muted); Controls.Add(hotkeyInfo);
-            status = Ui.Label("可拖入 TXT / EPUB", 358, 293, 250, 28, 8, Ui.Muted); Controls.Add(status);
+            status = Ui.Label("可拖入 TXT / EPUB", 440, 293, 168, 28, 8, Ui.Muted); Controls.Add(status);
             ContextMenuStrip trayMenu = new ContextMenuStrip();
             trayMenu.Items.Add("文档", null, (s, e) => ShowLibrary());
+            trayMenu.Items.Add("主页", null, (s, e) => ReturnHome());
             trayMenu.Items.Add("隐藏 / 恢复阅读条", null, (s, e) => ToggleReader());
             ToolStripMenuItem passThrough = new ToolStripMenuItem("鼠标穿透", null, (s, e) => ToggleClickThrough());
             trayMenu.Items.Add(passThrough); trayMenu.Opening += (s, e) => passThrough.Checked = store.Pref.ClickThrough;
             trayMenu.Items.Add("企业微信浅色样式", null, (s, e) => UsePreset(4));
             trayMenu.Items.Add("IDEA 深色样式", null, (s, e) => UsePreset(5));
             trayMenu.Items.Add("阅读设置", null, (s, e) => OpenSettings());
-            trayMenu.Items.Add("退出", null, (s, e) => ExitApp());
-            tray = new NotifyIcon { Icon = Icon, Text = "文档", Visible = true, ContextMenuStrip = trayMenu };
+            trayMenu.Items.Add("关闭阅读", null, (s, e) => CloseReading());
+            trayMenu.Items.Add("退出良子小窗", null, (s, e) => ExitApp());
+            tray = new NotifyIcon { Icon = Icon, Text = "文档", Visible = app == null, ContextMenuStrip = trayMenu };
             tray.DoubleClick += (s, e) => ShowLibrary();
             DragEnter += (s, e) => { if (!busy && e.Data.GetDataPresent(DataFormats.FileDrop)) e.Effect = DragDropEffects.Copy; };
             DragDrop += async (s, e) => await ImportFiles((string[])e.Data.GetData(DataFormats.FileDrop));
@@ -645,11 +618,16 @@ namespace OneLineReader
         public void ShowLibrary()
         {
             if (reader != null) { reader.Pause(); reader.Hide(); }
-            RefreshPreview(); Show(); WindowState = FormWindowState.Normal; Activate();
+            if (session == null && books.SelectedItem != null) SelectBook(); RefreshPreview(); Show(); WindowState = FormWindowState.Normal; Activate();
         }
         private void ToggleReader()
         {
             if (Application.OpenForms.Cast<Form>().Any(f => f.Modal)) return;
+            if (app != null && app.HideVisibleChat()) return;
+            if (chat != null && chat.Visible)
+            {
+                chat.Hide(); Hide(); if (reader != null && reader.Visible) { reader.Pause(); reader.Hide(); SaveNow(); } return;
+            }
             if (reader != null && !reader.IsDisposed && reader.Visible) { reader.Pause(); reader.Hide(); SaveNow(); }
             else if (session != null) ShowReader(false);
             else { if (Visible) Hide(); else ShowLibrary(); }
@@ -660,6 +638,13 @@ namespace OneLineReader
             if (reader != null) { reader.Pause(); reader.TopMost = false; reader.SetInputMode(false); }
             using (SettingsForm dialog = new SettingsForm(store.Pref)) dialog.ShowDialog(visible ? (IWin32Window)reader : this);
             if (reader != null) reader.ApplyPreferences(); ApplyTheme(); dirty = true; SaveNow();
+        }
+        public void ReturnHome() { if (app != null) app.ShowHome(); else ShowLibrary(); }
+        public void OpenChat()
+        {
+            if (app != null) { app.OpenModule("chat"); return; }
+            if (chat == null || chat.IsDisposed) chat = new ChatForm(store, SaveNow, ShowLibrary);
+            chat.ApplyTheme(); chat.Show(); chat.Activate();
         }
         public void ToggleClickThrough()
         {
@@ -675,6 +660,8 @@ namespace OneLineReader
         private void ApplyTheme()
         {
             Ui.Skin(this, store.Pref.UiDark);
+            if (chat != null && !chat.IsDisposed) chat.ApplyTheme();
+            if (app != null) app.ApplyTheme();
             appearance.Text = store.Pref.UiDark ? "IDEA · 深色 ⇄" : "企业微信 · 浅色 ⇄";
             books.Invalidate(); Invalidate();
         }
@@ -697,17 +684,25 @@ namespace OneLineReader
                 if (!saveWarning) { saveWarning = true; MessageBox.Show("无法保存进度，请检查文件夹是否可写或磁盘是否已满。\n\n" + ex.Message, "保存失败", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
             }
         }
-        public void ExitApp() { if (busy) return; allowExit = true; Close(); }
-        private void ShowError(string message, Exception ex) { MessageBox.Show(this, message + "：" + ex.Message, "良子阅读器", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+        public void CloseReading()
+        {
+            if (busy) return;
+            SaveNow(); if (reader != null) { reader.Dispose(); reader = null; }
+            session = null; preview.Text = ""; Hide();
+        }
+        public void ExitApp() { if (busy) return; if (app != null) { app.ExitApplication(); return; } Shutdown(); }
+        internal void Shutdown() { allowExit = true; Close(); }
+        private void ShowError(string message, Exception ex) { MessageBox.Show(this, message + "：" + ex.Message, "良子小窗", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
             hideShortcut = "";
-            foreach (Keys key in new Keys[] { Keys.H, Keys.F8, Keys.F9 })
+            foreach (Keys key in app == null ? new Keys[] { Keys.H, Keys.F8, Keys.F9 } : new Keys[0])
             {
                 if (!Native.RegisterHotKey(Handle, 1, 0x4003, (uint)key)) continue;
                 registeredKeys.Add(1); hideShortcut = "Ctrl + Alt + " + key; break;
             }
+            if (app != null) hideShortcut = "Ctrl + Alt + H";
             if (Native.RegisterHotKey(Handle, 2, 0x4003, (uint)Keys.Right)) registeredKeys.Add(2);
             if (Native.RegisterHotKey(Handle, 3, 0x4003, (uint)Keys.Left)) registeredKeys.Add(3);
             mouseShortcut = "";
@@ -742,9 +737,9 @@ namespace OneLineReader
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             if (busy && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; return; }
-            if (!allowExit && e.CloseReason == CloseReason.UserClosing && reader != null && reader.Visible) { e.Cancel = true; Hide(); return; }
+            if (!allowExit && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; CloseReading(); return; }
             SaveNow(); saveTimer.Stop();
-            tray.Visible = false; tray.Dispose(); if (reader != null) reader.Dispose();
+            tray.Visible = false; tray.Dispose(); if (reader != null) reader.Dispose(); if (chat != null) chat.Dispose();
             base.OnFormClosing(e);
         }
     }
@@ -781,7 +776,7 @@ namespace OneLineReader
         public ReaderForm(LibraryForm library, Store store, ReadingSession session)
         {
             this.library = library; this.store = store; this.session = session; finished = session.Book.Completed;
-            Text = "良子阅读器 · 悬浮阅读"; FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; StartPosition = FormStartPosition.Manual;
+            Text = "良子小窗 · 悬浮阅读"; FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; StartPosition = FormStartPosition.Manual;
             AutoScaleMode = AutoScaleMode.None; DoubleBuffered = true; KeyPreview = true;
             MinimumSize = new Size(240, 22); MaximumSize = new Size(1800, 2000);
             Rectangle screen = Screen.FromControl(library).WorkingArea;
@@ -802,8 +797,9 @@ namespace OneLineReader
             menu.Items.Add("企业微信浅色样式", null, (s, e) => library.UsePreset(4));
             menu.Items.Add("IDEA 深色样式", null, (s, e) => library.UsePreset(5));
             menu.Items.Add("返回书架       双击阅读条", null, (s, e) => library.ShowLibrary());
+            menu.Items.Add("返回主菜单", null, (s, e) => library.ReturnHome());
             menu.Items.Add("隐藏阅读条     Esc", null, (s, e) => HideReader());
-            menu.Items.Add("退出阅读器", null, (s, e) => library.ExitApp());
+            menu.Items.Add("关闭阅读", null, (s, e) => library.CloseReading());
             ContextMenuStrip = menu;
             menu.Opening += (s, e) => Pause();
             auto.Tick += (s, e) => MoveLine(true);

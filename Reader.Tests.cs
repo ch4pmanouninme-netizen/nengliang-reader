@@ -125,7 +125,6 @@ namespace OneLineReader
                 Console.WriteLine("SUCCESS: " + assertions + " assertions passed."); return 0;
             }
             catch (Exception ex) { Console.WriteLine(ex.ToString()); return 1; }
-            
         }
     }
 }
