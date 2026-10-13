@@ -57,7 +57,7 @@ codesign --verify --deep --strict --verbose=2 artifacts/osx-arm64/良子小窗.a
 spctl --assess --type execute --verbose artifacts/osx-arm64/良子小窗.app
 ```
 
-不要指导普通用户关闭系统安全保护来安装预览包。未完成签名、公证的 Mac 包不应作为正式稳定版发布。
+不要指导普通用户关闭系统安全保护来安装预览包。v2.0.0 按维护者要求使用普通 Release 类型发布；Mac 包仍标记 unsigned，签名、公证和真机验收状态必须在发行说明中明确。普通 Release 类型不代表这些验证已经完成。
 
 ## GitHub 流程
 
@@ -75,9 +75,9 @@ git push -u origin feat/cross-platform
 1. 将分支推送到仓库并发起 PR；等待 CI 通过。
 2. 按下方清单完成 Windows 和 Mac 人工验收，更新 README 的验证状态。
 3. 更新 `Directory.Build.props`、CHANGELOG 和发行说明中的版本。
-4. 合并后创建 `v2.0.0-preview.2` 等标签；标签版本必须与项目版本一致。
-5. `release.yml` 自动构建三种安装包，创建 **Draft + Prerelease**，不会自动公开。
-6. 下载并复核资产和 SHA256。工作流默认没有 Apple 证书，因此 Mac 资产为 unsigned 预览；正式发布时用经过签名公证的资产替换。
+4. 合并后从 Actions 手动运行 Build release draft，或推送与项目版本一致的 v* 标签。
+5. `release.yml` 自动构建三种安装包并生成 SHA256，创建普通 Release 草稿，不自动公开。手动运行时使用项目版本和本次运行的提交 SHA。
+6. 下载并复核资产和 SHA256。工作流默认没有 Apple 证书，因此 Mac 资产标记 unsigned；发行说明必须披露签名、公证与实机测试状态。
 7. 编辑草稿说明，明确验证过的系统/架构和已知限制，再由维护者点击发布。
 
 ## 人工验收清单
