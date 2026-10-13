@@ -15,7 +15,7 @@ $readerChild = [Diagnostics.Process]::Start($readerStart)
 try {
     if (!$readerChild.WaitForExit(60000)) { throw 'Packaged launcher smoke timed out.' }
     if ($readerChild.ExitCode -ne 0) { throw "Packaged smoke failed; see $readerTestRoot/测试 数据/smoke-test.error" }
-    foreach ($readerMarker in @('smoke-test.ok', 'shell-chat-smoke.ok')) {
+    foreach ($readerMarker in @('smoke-test.ok', 'shell-chat-smoke.ok', 'book-library-smoke.ok')) {
         if (!(Test-Path -LiteralPath (Join-Path $readerTestRoot "测试 数据/$readerMarker"))) { throw "Missing $readerMarker" }
     }
 } finally {

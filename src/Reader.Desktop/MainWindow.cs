@@ -11,7 +11,7 @@ using Reader.Core;
 
 namespace Reader.Desktop;
 
-internal sealed class MainWindow : Window
+internal sealed partial class MainWindow : Window
 {
     private readonly Store store;
     private readonly ListBox books = new() { MinWidth = 160 };
@@ -61,11 +61,15 @@ internal sealed class MainWindow : Window
         var bottom = new StackPanel { Spacing = 10, Margin = new Thickness(0, 16, 0, 0), Children = { actions, cancel, progress, status, shortcuts } };
         DockPanel.SetDock(bottom, Dock.Bottom); root.Children.Add(bottom);
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("190,20,*") };
-        grid.Children.Add(books); Grid.SetColumn(description, 2); grid.Children.Add(description); root.Children.Add(grid);
+        var shelf = new DockPanel { LastChildFill = true };
+        groupFilter.Margin = new Thickness(0, 0, 0, 8); DockPanel.SetDock(groupFilter, Dock.Top);
+        shelf.Children.Add(groupFilter); shelf.Children.Add(books);
+        grid.Children.Add(shelf); Grid.SetColumn(description, 2); grid.Children.Add(description); root.Children.Add(grid);
+        ConfigureBookLibrary();
         Content = root;
         books.SelectionChanged += async (_, _) =>
         {
-            if (!busy && books.SelectedItem is Book book) await SelectBook(book);
+            if (!busy && !refreshingBooks && books.SelectedItem is Book book && session?.Book != book) await SelectBook(book);
         };
         DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragOverEvent, (_, e) => e.DragEffects = !busy && e.DataTransfer.Contains(DataFormat.File) ? DragDropEffects.Copy : DragDropEffects.None);
@@ -115,12 +119,6 @@ internal sealed class MainWindow : Window
             case 4: ToggleClickThrough(); break;
             case 5: if (reader?.IsVisible == true) reader.ToggleAuto(); break;
         }
-    }
-
-    private void RefreshBooks(string? selected)
-    {
-        books.ItemsSource = store.Books.ToArray();
-        books.SelectedItem = store.Books.FirstOrDefault(book => book.Id == selected) ?? store.Books.FirstOrDefault();
     }
 
     private async Task SelectBook(Book book)
@@ -173,7 +171,7 @@ internal sealed class MainWindow : Window
             }
             status.Text = failures.Count == 0 ? "导入完成，阅读进度保存在本机。" : string.Join("\n", failures);
         });
-        if (selected != null) RefreshBooks(selected);
+        if (selected != null) RefreshBooks(selected, true);
         Save();
     }
 
@@ -204,17 +202,17 @@ internal sealed class MainWindow : Window
             catch (OperationCanceledException) { status.Text = "下载已取消。"; }
             finally { downloadCancellation = null; cancel.IsVisible = false; progress.IsIndeterminate = false; }
         });
-        if (selected != null) RefreshBooks(selected);
+        if (selected != null) RefreshBooks(selected, true);
         Save();
     }
 
     private async Task RunBusy(Func<Task> operation)
     {
         if (busy) return;
-        busy = true; actions.IsEnabled = books.IsEnabled = false; reader?.Pause(); reader?.Hide();
+        busy = true; actions.IsEnabled = books.IsEnabled = groupFilter.IsEnabled = false; reader?.Pause(); reader?.Hide();
         try { if (pendingSave != null) await pendingSave; await operation(); }
         catch (Exception ex) { status.Text = ex.Message; }
-        finally { busy = false; actions.IsEnabled = books.IsEnabled = true; }
+        finally { busy = false; actions.IsEnabled = books.IsEnabled = groupFilter.IsEnabled = true; }
     }
 
     private async Task Archive(bool import)
@@ -360,6 +358,9 @@ internal sealed class MainWindow : Window
             if (SmokeHome != null) await DesktopSmokeTests.Run(SmokeHome, this, store);
             var book = store.Add("界面冒烟测试", "第一章\n中文 English 😊 阅读测试。\n第二段。", "TXT");
             busy = true; RefreshBooks(book.Id); busy = false;
+            await SelectBook(book);
+            await RunBookLibrarySmoke();
+            busy = true; RefreshBooks(book.Id, true); busy = false;
             await SelectBook(book);
             await Task.Delay(150);
             Capture(this, "library.png");

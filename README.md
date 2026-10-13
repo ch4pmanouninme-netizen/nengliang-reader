@@ -15,6 +15,7 @@ v2.2.0 新增：新增 VS Code 的 19 个与 JetBrains 的 8 个官方内置主�
 - **独立服务**：Windows/macOS 均能启动聊天服务，客户端退出不影响独立服务。
 
 - **本地阅读**：TXT（UTF-8、UTF-16、GBK/GB18030）和 EPUB 纯文本导入，支持拖放。
+- **书库管理**：右键书籍删除、置顶/取消置顶、新建或选择分组；左侧下拉框筛选全部书籍、未分组或指定分组。置顶与分组随进度保存并进入书库备份，详见 [书库管理](docs/BOOK-LIBRARY.md)。
 - **悬浮阅读**：1～10 行显示、拖动定位、右边缘调整宽度、字号、透明度和多种外观。
 - **阅读操作**：前后翻页、自动翻页、查找、百分比跳转，每本书一个书签。
 - **快捷控制**：自定义全局快捷键、注册失败提示、鼠标穿透、托盘/菜单栏恢复入口。
@@ -29,8 +30,8 @@ v2.2.0 新增：新增 VS Code 的 19 个与 JetBrains 的 8 个官方内置主�
 | 平台 | 构建目标 | 状态 |
 | --- | --- | --- |
 | Windows x64 | `win-x64` | 发布构建与窗口冒烟检查通过；真实热键、多屏、缩放待人工验收 |
-| macOS Apple Silicon | `osx-arm64` | 发布构建通过，真机交互待验收 |
-| macOS Intel | `osx-x64` | 发布构建通过，真机交互待验收 |
+| macOS Apple Silicon | `osx-arm64` | 本次 2.0.2 未构建或实机验收 |
+| macOS Intel | `osx-x64` | 本次 2.0.2 未构建或实机验收 |
 
 技术栈为 **.NET 10 + Avalonia 11.3.22**。自包含发行包无需用户额外安装 .NET。具体系统最低版本应符合 [.NET 10 支持平台](https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md)与 [Avalonia 平台要求](https://docs.avaloniaui.net/docs/supported-platforms)；本项目尚未对所有版本完成测试。
 

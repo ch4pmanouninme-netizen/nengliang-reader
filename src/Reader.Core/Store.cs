@@ -10,7 +10,7 @@ using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 namespace Reader.Core;
-    public sealed class Store
+    public sealed partial class Store
     {
         private readonly SemaphoreSlim writes = new(1, 1);
         public readonly string Root;
@@ -23,6 +23,7 @@ namespace Reader.Core;
         {
             Root = root;
             Directory.CreateDirectory(Path.Combine(root, "books"));
+            RecoverPendingRemovals();
             string state = Path.Combine(root, "state.xml");
             if (!File.Exists(state)) return;
             try { Load(state); }
@@ -60,7 +61,7 @@ namespace Reader.Core;
                 string id = (string)b.Attribute("id") ?? "";
                 if (!Regex.IsMatch(id, "^[a-f0-9]{64}$")) continue;
                 if (!File.Exists(Path.Combine(Root, "books", id + ".txt"))) continue;
-                loaded.Add(new Book { Id = id, Title = (string)b.Attribute("title") ?? "未命名", Format = (string)b.Attribute("format") ?? "TXT", Position = Number(b, "position", 0), Bookmark = Number(b, "bookmark", -1), Length = Number(b, "length", 0), Completed = (string)b.Attribute("completed") == "true" });
+                loaded.Add(new Book { Id = id, Title = (string)b.Attribute("title") ?? "未命名", Format = (string)b.Attribute("format") ?? "TXT", Position = Number(b, "position", 0), Bookmark = Number(b, "bookmark", -1), Length = Number(b, "length", 0), Completed = (string)b.Attribute("completed") == "true", IsPinned = (string)b.Attribute("pinned") == "true", Group = ReadGroup((string)b.Attribute("group")) });
             }
             XElement p = root.Element("preferences");
             if (p != null)
@@ -135,7 +136,7 @@ namespace Reader.Core;
                     new XAttribute("fontSize", (int)Pref.FontSize), new XAttribute("fontName", Pref.FontName), new XAttribute("topMost", Pref.TopMost ? "true" : "false"),
                     new XAttribute("chatHost", Pref.ChatHost), new XAttribute("chatNick", Pref.ChatNick), new XAttribute("chatPort", Pref.ChatPort), new XAttribute("uiTheme", Pref.UiTheme), new XAttribute("readingThemeId", Pref.ReadingThemeId),
                     new XAttribute("stealth", Pref.Stealth ? "true" : "false"), new XAttribute("clickThrough", Pref.ClickThrough ? "true" : "false"), new XAttribute("uiDark", Pref.UiDark ? "true" : "false")));
-            foreach (Book b in Books) root.Add(new XElement("book", new XAttribute("id", b.Id), new XAttribute("title", b.Title), new XAttribute("format", b.Format), new XAttribute("position", b.Position), new XAttribute("bookmark", b.Bookmark), new XAttribute("length", b.Length), new XAttribute("completed", b.Completed ? "true" : "false")));
+            foreach (Book b in Books) root.Add(new XElement("book", new XAttribute("id", b.Id), new XAttribute("title", b.Title), new XAttribute("format", b.Format), new XAttribute("position", b.Position), new XAttribute("bookmark", b.Bookmark), new XAttribute("length", b.Length), new XAttribute("completed", b.Completed ? "true" : "false"), new XAttribute("pinned", b.IsPinned ? "true" : "false"), new XAttribute("group", b.Group)));
             return root;
         }
 

@@ -32,6 +32,18 @@ internal static class Dialogs
         await window.ShowDialog(owner);
     }
 
+    public static async Task<bool> Confirm(Window owner, string title, string message)
+    {
+        var window = Base(title); window.Name = "ConfirmationDialog";
+        var confirm = new Button { Name = "Confirm", Content = "删除" };
+        var cancel = new Button { Name = "Cancel", Content = "取消", IsDefault = true, IsCancel = true };
+        confirm.Click += (_, _) => window.Close(true); cancel.Click += (_, _) => window.Close(false);
+        window.Content = new StackPanel { Margin = new Thickness(24), Spacing = 16, Children = {
+            new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
+            new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { cancel, confirm } } } };
+        return await window.ShowDialog<bool>(owner);
+    }
+
     private static Window Base(string title) => new() { Title = title, Width = 500, SizeToContent = SizeToContent.Height,
         MinHeight = 180, MaxHeight = 650, CanResize = false, WindowStartupLocation = WindowStartupLocation.CenterOwner };
 }
