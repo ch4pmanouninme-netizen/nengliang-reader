@@ -2,7 +2,7 @@
 
 适用于 Windows 和 macOS 的悬浮阅读与局域网加密聊天工具。基于上游 v1.5.2 迁移，保留 TXT / EPUB、进度保存、全局快捷键，并提供链接下载与跨平台书库备份。
 
-**当前版本：2.2.0。** 基于上游 v1.5.2 迁移，原始源码保留在 [`legacy/v1.5.2/`](legacy/v1.5.2/)。Windows 与 macOS 自动构建和回归检查已通过；Mac 实机交互、签名与公证尚未完成，具体限制见下方平台验证状态。
+**当前版本：2.2.1。** 基于上游 v1.5.2 迁移，原始源码保留在 [`legacy/v1.5.2/`](legacy/v1.5.2/)。Windows 与 macOS 自动构建和回归检查已通过；Mac 实机交互、签名与公证尚未完成，具体限制见下方平台验证状态。
 
 [发行版本](https://github.com/ch4pmanouninme-netizen/nengliang-reader/releases) · [提交问题](https://github.com/ch4pmanouninme-netizen/nengliang-reader/issues) · [更新日志](CHANGELOG.md) · [构建与发布](docs/RELEASE.md)
 
@@ -50,7 +50,7 @@ Mac 在 Spaces、全屏应用、睡眠唤醒及不同键盘布局下的行为需
 
 ## 下载与使用
 
-在 [Releases](https://github.com/ch4pmanouninme-netizen/nengliang-reader/releases) 中选择对应平台。选择 v2.1.0 的平台安装包；Source code 为源码归档。
+在 [Releases](https://github.com/ch4pmanouninme-netizen/nengliang-reader/releases) 中选择对应平台。选择 v2.2.1 的平台安装包；Source code 为源码归档。
 
 - Windows：完整解压 `NengliangReader-win-x64.zip`，运行根目录的 `良子小窗.exe`。根目录仅含 EXE、`README.md` 和 `app/`；请保留 `app/` 与 EXE 的相对位置，可为 EXE 创建桌面快捷方式。旧版发行包的入口仍为 `NengliangReader.exe`。
 - Mac：根据芯片选择 `osx-arm64` 或 `osx-x64`，打开 DMG，将应用复制到“应用程序”。带 `unsigned` 的文件尚未完成 Developer ID 签名与 Apple 公证，系统可能阻止打开；请勿关闭系统安全保护。
@@ -95,7 +95,7 @@ TLS 保护客户端到服务端的传输，服务端可以读取消息，不是�
 
 服务仅读取本机主题偏好，不写入书库。退出客户端不会停止独立服务；关闭服务会断开所有连接并清空服务历史。当前只实现文字聊天，无图片附件、账号或审计，不自动配置防火墙。
 
-服务窗口可选启用**助手**。助手以 `127.0.0.1` 回环成员身份加入本机房间（默认昵称“小助手”），因此人数上限、单条长度、限流与历史规则对它同样生效。勾选“仅 @昵称 时回答”时，只有消息里出现 `@小助手` 才会触发；取消勾选则每条消息都会触发。回答按 480 字符分片依次广播，助手不回复自己发出的消息，房间不会因此循环。
+服务窗口可选启用**助手**。助手以普通成员身份、经由你在窗口里选中的监听地址加入房间（默认昵称“小助手”），因此人数上限、单条长度、限流与历史规则对它同样生效。这也意味着助手在局域网部署下照常工作：选中网卡地址后，房间里的其他人提问和助手回答走同一条链路。勾选“仅 @昵称 时回答”时，只有消息里出现 `@小助手` 才会触发；取消勾选则每条消息都会触发。回答按 480 字符分片依次广播，助手不回复自己发出的消息，房间不会因此循环。
 
 助手需要一个 OpenAI 兼容的 `/v1/chat/completions` 端点。**端点必须使用 `https`，只有 `127.0.0.1` 允许 `http`**，因为密钥随请求头明文发送。回答由该服务生成后直接广播给全房间，没有人工审核，请不要把密钥交给不可信的端点。
 
