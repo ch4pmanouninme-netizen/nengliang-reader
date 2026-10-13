@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>NengliangReader</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Reader.Chat/Reader.Chat.csproj" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
+    <ProjectReference Include="../Reader.Core/Reader.Core.csproj" />
+    <ProjectReference Include="../Reader.Platform.Windows/Reader.Platform.Windows.csproj" />
+    <ProjectReference Include="../Reader.Platform.Mac/Reader.Platform.Mac.csproj" />
+  </ItemGroup>
+</Project>
