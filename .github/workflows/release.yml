@@ -1,0 +1,69 @@
+name: Draft preview release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+          - os: macos-latest
+            rid: osx-arm64
+          - os: macos-latest
+            rid: osx-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Check tag version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          [xml]$project = Get-Content Directory.Build.props
+          if ($env:RELEASE_TAG -ne ('v' + $project.Project.PropertyGroup.Version)) { throw 'Tag and project version differ.' }
+      - run: dotnet build NengliangReader.sln -c Release
+      - run: dotnet run --project tests/Reader.Core.Tests -c Release --no-build
+      - run: dotnet run --project tests/Reader.Chat.Tests -c Release --no-build
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./build/package-windows.ps1
+      - if: runner.os == 'macOS'
+        run: bash build/package-macos.sh ${{ matrix.rid }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.rid }}
+          path: |
+            artifacts/*.zip
+            artifacts/*.dmg
+          if-no-files-found: error
+  draft:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Create draft with checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          cd packages
+          sha256sum *.zip *.dmg > SHA256SUMS.txt
+          printf '%s\n' '跨平台开发预览。Mac 包尚未签名公证，请维护者完成真机验收并替换正式资产后再公开。详见 docs/RELEASE.md。' > notes.md
+          gh release create "$RELEASE_TAG" *.zip *.dmg SHA256SUMS.txt --verify-tag --draft --prerelease --title "$RELEASE_TAG" --notes-file notes.md

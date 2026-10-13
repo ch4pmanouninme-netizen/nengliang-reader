@@ -1,0 +1,36 @@
+name: CI
+on:
+  push:
+    branches: [main, 'feat/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet restore NengliangReader.sln --configfile NuGet.Config
+      - run: dotnet build NengliangReader.sln -c Release --no-restore
+      - run: dotnet run --project tests/Reader.Core.Tests -c Release --no-build
+      - run: dotnet run --project tests/Reader.Chat.Tests -c Release --no-build
+      - name: Upstream Windows interoperability
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./tests/build-upstream-bridge.ps1
+          dotnet run --project tests/Reader.Chat.Tests -c Release --no-build -- artifacts/upstream-bridge/UpstreamBridge.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Upstream interoperability failed.' }
+      - name: Desktop smoke
+        shell: pwsh
+        run: |
+          dotnet run --project src/Reader.Desktop -c Release --no-build -- --smoke-test --data ./artifacts/smoke
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop smoke failed.' }
+          if (!(Test-Path ./artifacts/smoke/shell-chat-smoke.ok) -or !(Test-Path ./artifacts/smoke/smoke-test.ok)) { throw 'Smoke markers missing.' }

@@ -6,3 +6,9 @@ data/
 .vs/
 bin/
 obj/
+artifacts/
+test-results/
+*.user
+*.pfx
+*.p12
+.DS_Store
