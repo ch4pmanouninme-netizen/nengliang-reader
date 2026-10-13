@@ -22,7 +22,7 @@ entries=("$mount_dir"/*)
 [[ ${#entries[@]} == 3 ]]
 executable="$mount_dir/良子小窗.app/Contents/MacOS/NengliangReader"
 [[ -x "$executable" ]]
-lipo -verify_arch "$arch" "$executable"
+lipo "$executable" -verify_arch "$arch"
 plutil -lint "$mount_dir/良子小窗.app/Contents/Info.plist"
 grep -q '仍要打开' "$mount_dir/README.md"
 echo "DMG verification, layout, Applications link, executable architecture and installation notes passed: $rid"
