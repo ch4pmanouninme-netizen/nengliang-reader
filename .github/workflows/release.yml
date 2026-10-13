@@ -8,6 +8,7 @@ permissions:
 jobs:
   package:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
@@ -69,6 +70,10 @@ jobs:
         run: |
           version="$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' Directory.Build.props | tr -d '\r')"
           RELEASE_TAG="v$version"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; preserving its assets and publication state."
+            exit 0
+          fi
           cd packages
           sha256sum *.zip *.dmg > SHA256SUMS.txt
           printf '%s\n' 'Windows/macOS 跨平台版本。macOS 包尚未完成 Developer ID 签名、公证及实机交互验收；请在发行说明中明确这些限制。' > notes.md
