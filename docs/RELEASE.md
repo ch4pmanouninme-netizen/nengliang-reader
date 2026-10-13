@@ -20,7 +20,7 @@ Windows 图形冒烟检查（使用独立目录，不读写日常书库）：
 dotnet run --project src/Reader.Desktop -c Release --no-build -- --data ./artifacts/smoke-data --smoke-test
 ```
 
-成功时生成 `artifacts/smoke-data/smoke-test.ok` 和 `shell-chat-smoke.ok`，覆盖阅读与真实聊天窗口、TLS 收发、重连、模块生命周期和服务窗口。失败时查看 `.error` 文件。此检查不验证全局快捷键、穿透或真实多屏行为。
+成功时生成 `artifacts/smoke-data/smoke-test.ok`、`shell-chat-smoke.ok` 和 `book-library-smoke.ok`，覆盖阅读与真实聊天窗口、TLS 收发、重连、模块生命周期、服务窗口，以及逐书菜单、置顶/分组和删除交互。失败时查看 `.error` 文件。此检查不验证全局快捷键、穿透或真实多屏行为。
 
 ## 安装包
 

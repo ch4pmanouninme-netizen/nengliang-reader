@@ -85,7 +85,7 @@ public static class LibraryArchive
                 if (store.Books.Count == before) continue;
                 book.Position = Store.Clamp(item.Book.Position, 0, Math.Max(0, item.Text.Length - 1));
                 book.Bookmark = item.Book.Bookmark < 0 ? -1 : Store.Clamp(item.Book.Bookmark, 0, Math.Max(0, item.Text.Length - 1));
-                book.Completed = item.Book.Completed; added++;
+                book.Completed = item.Book.Completed; book.IsPinned = item.Book.IsPinned; book.Group = item.Book.Group; added++;
             }
             store.Save(); return added;
         }

@@ -60,6 +60,7 @@ try
     Task nextSave = original.SaveAsync(); book.Position = 6; Task lastSave = original.SaveAsync();
     await Task.WhenAll(nextSave, lastSave);
     Check(new Store(original.Root).Books[0].Position == 6, "serialized async writes retain newest progress");
+    await BookLibraryTests.Run(Path.Combine(root, "book-library"));
     Console.WriteLine("All core and download regression tests passed.");
     return 0;
 }
