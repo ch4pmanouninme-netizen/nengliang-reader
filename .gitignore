@@ -4,6 +4,7 @@
 source/test-results/
 data/
 .vs/
+.idea/
 bin/
 obj/
 artifacts/

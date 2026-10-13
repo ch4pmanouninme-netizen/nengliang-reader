@@ -8,10 +8,10 @@ using System.Text;
 
 int checks = 0;
 void Check(bool ok, string name) { if (!ok) throw new Exception(name); Console.WriteLine("PASS " + name); checks++; }
-async Task Wait(Func<bool> condition, string name)
+async Task Wait(Func<bool> condition, string name, int seconds = 8)
 {
     var clock = Stopwatch.StartNew();
-    while (!condition() && clock.Elapsed < TimeSpan.FromSeconds(8)) await Task.Delay(20);
+    while (!condition() && clock.Elapsed < TimeSpan.FromSeconds(seconds)) await Task.Delay(20);
     Check(condition(), name);
 }
 async Task Reject(Func<Task> action, string name)
@@ -84,6 +84,90 @@ try
     await fresh.ConnectAsync(info.Host, restarted.Port, "Fresh", room, pin); await fresh.SendAsync("new-session");
     await Wait(() => freshPackets.Any(p => p.Text == "new-session"), "same certificate restart accepts fresh connection");
     Check(!freshPackets.Any(p => p.Text == "second"), "restart does not retain history");
+
+    object parsed = AgentJson.Parse("{\"choices\":[{\"delta\":{\"content\":\"你好\\n世界 \\u4e2d\"}}],\"n\":1.5,\"ok\":true,\"nil\":null}");
+    Check(AgentJson.Text(parsed, "choices", "0", "delta", "content") == "你好\n世界 中", "agent reader extracts nested streamed content and decodes escapes");
+    Check(AgentJson.Text(parsed, "choices", "0", "gone") == null && AgentJson.Text(parsed, "nope", "0") == null, "missing agent JSON paths return null rather than throwing");
+    Check(AgentJson.Quote("a\"b\\c\nd\u0001") == "\"a\\\"b\\\\c\\nd\\u0001\"", "agent request encoder escapes quotes backslashes and control characters");
+
+    string emoji = new string('字', 19) + "😊" + new string('字', 300);
+    int cut = AgentText.Cut(emoji, 20);
+    Check(!(Char.IsHighSurrogate(emoji[cut - 1]) && Char.IsLowSurrogate(emoji[cut])), "chunk boundary never splits an emoji surrogate pair");
+
+    var source = new StringBuilder();
+    for (int i = 0; i < 200; i++) source.Append("第" + i + "段。");
+    string longAnswer = source.ToString();
+    var chunker = new AgentChunker(120);
+    var pieces = new List<string>();
+    for (int i = 0; i < longAnswer.Length; i += 7)
+    {
+        var ready = new List<string>();
+        chunker.Add(longAnswer.Substring(i, Math.Min(7, longAnswer.Length - i)), ready);
+        pieces.AddRange(ready);
+    }
+    string tail = chunker.Flush(); if (tail.Length > 0) pieces.Add(tail);
+    Check(pieces.All(p => p.Length <= 120), "chunker keeps every piece within the room message length");
+    Check(String.Concat(pieces) == longAnswer, "chunker reassembles a long answer in order without losing text");
+
+    bool agentRejected = false;
+    try { new AgentOptions("http://agent.example.com/v1", "k", "m", "小助手", ""); } catch (ArgumentException) { agentRejected = true; }
+    Check(agentRejected, "agent endpoint refuses plaintext http away from loopback");
+    agentRejected = false;
+    try { new AgentOptions("https://agent.example.com/v1", "k", "m", "小助手", "", true, true, 2000, 480, 8, 8); } catch (ArgumentException) { agentRejected = true; }
+    Check(agentRejected, "agent pacing above the room burst limit is rejected at construction");
+
+    var endpoint = new TcpListener(IPAddress.Loopback, 0); endpoint.Start();
+    int agentPort = ((IPEndPoint)endpoint.LocalEndpoint).Port;
+    var requests = new ConcurrentQueue<string>();
+    // The fixture repeats the agent nickname so that only the loop guard can stop a self-answer loop.
+    string reply = String.Concat(Enumerable.Repeat("@小助手：这是完整回答。", 150));
+    string events = "data: {\"choices\":[{\"delta\":{\"content\":" + AgentJson.Quote(reply) + "}}]}\r\n\r\ndata: [DONE]\r\n\r\n";
+    _ = Task.Run(() => ServeAgent(endpoint, events, 4, requests));
+
+    using (var agentCertificate = ChatSecurity.CreateCertificate())
+    using (var service = new ChatServer(room, new ChatOptions(sendBurst: 100), agentCertificate))
+    {
+        service.Start(IPAddress.Loopback, 0);
+        var agentSettings = new AgentOptions("http://127.0.0.1:" + agentPort + "/v1/chat", "test-key", "test-model", "小助手", "", true, true, 2000, 480);
+        using (var bridge = new AgentBridge(agentSettings, service.Port, room, service.Fingerprint, new ChatOptions(sendBurst: 100)))
+        using (var asker = new ChatConnection())
+        {
+            var seen = new ConcurrentQueue<ChatPacket>();
+            asker.Received += seen.Enqueue;
+            await asker.ConnectAsync("127.0.0.1", service.Port, "提问的人", room, service.Fingerprint);
+            await Wait(() => service.Online == 2, "agent joins the room as an ordinary online member", 25);
+            await asker.SendAsync("请大家稍等，@小助手 看一下这个问题。");
+            await Wait(() => seen.Any(p => p.Nick == "小助手" && p.Kind == "message"), "agent answers a mention inside the room", 25);
+            await Wait(() => !bridge.Status.StartsWith("正在回答"), "agent returns to idle once the answer is delivered", 25);
+            ChatPacket[] answers = seen.Where(p => p.Kind == "message" && p.Nick == "小助手").ToArray();
+            Check(answers.All(p => p.Text.Length <= 480), "every chunk of a long answer fits the room message length");
+            Check(String.Concat(answers.Select(p => p.Text)) == reply, "chunked answer reassembles to the full reply in order");
+            Check(answers.Select(p => p.Id).Distinct().Count() == answers.Length, "each agent chunk gets its own server sequence number");
+            Check(requests.Count == 1 && requests.Single().Contains("@小助手 看一下这个问题"), "agent forwards the question text and its asker to the endpoint");
+            await Task.Delay(3000);
+            Check(requests.Count == 1, "agent never answers its own messages, so the room cannot loop");
+            Check(seen.Count(p => p.Kind == "message" && p.Nick == "小助手") == answers.Length, "no runaway repeat answers arrive after the reply settles");
+        }
+    }
+    endpoint.Stop();
+
+    // Written to a temp directory, never to the real %LOCALAPPDATA% agent.xml the service would use.
+    string agentRoot = Path.Combine(Path.GetTempPath(), "nengliang-agent-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        string configPath = Path.Combine(agentRoot, "agent.xml");
+        var saved = new AgentOptions("http://127.0.0.1:1/v1/chat", "test-key", "test-model", "小助手", "");
+        AgentConfig.Save(configPath, saved);
+        AgentOptions reloaded = AgentConfig.Load(configPath);
+        Check(reloaded != null && reloaded.Endpoint == saved.Endpoint && reloaded.ApiKey == "test-key" && reloaded.Nick == "小助手" && reloaded.MentionOnly, "agent settings survive a protected save and load round trip");
+        string written = File.ReadAllText(configPath, Encoding.UTF8);
+        // DPAPI is Windows-only, so the file says which of the two it got rather than implying safety.
+        if (OperatingSystem.IsWindows()) Check(written.Contains("protected=\"true\"") && !written.Contains("test-key"), "agent API key is DPAPI-protected and never written in plaintext");
+        else Check(written.Contains("protected=\"false\""), "outside Windows the agent key is stored unprotected and marked as such");
+        Check(AgentConfig.Load(Path.Combine(agentRoot, "absent.xml")) == null, "missing agent settings load as null instead of throwing");
+    }
+    finally { try { Directory.Delete(agentRoot, true); } catch (IOException) { } }
+
     if (args.Length == 1)
     {
         var start = new ProcessStartInfo(args[0]) { RedirectStandardOutput = true, RedirectStandardInput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
@@ -104,3 +188,54 @@ try
     Console.WriteLine($"{checks} chat checks passed."); return 0;
 }
 catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
+
+// Minimal HTTP/1.1 fixture standing in for an OpenAI-compatible endpoint. HttpListener needs an
+// admin URL ACL on Windows, so the raw socket is the portable choice.
+static void ServeAgent(TcpListener listener, string body, int count, ConcurrentQueue<string> requests)
+{
+    byte[] payload = Encoding.UTF8.GetBytes(body);
+    for (int i = 0; i < count; i++)
+    {
+        try
+        {
+            using (TcpClient client = listener.AcceptTcpClient())
+            using (NetworkStream stream = client.GetStream())
+            {
+                string? request = ReadHttpRequest(stream);
+                if (request == null) continue;
+                requests.Enqueue(request);
+                byte[] head = Encoding.UTF8.GetBytes("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: " + payload.Length + "\r\nConnection: close\r\n\r\n");
+                stream.Write(head, 0, head.Length); stream.Write(payload, 0, payload.Length); stream.Flush();
+            }
+        }
+        catch (Exception ex) { if (!ChatWire.Expected(ex)) throw; }
+    }
+}
+
+static string? ReadHttpRequest(Stream stream)
+{
+    MemoryStream raw = new MemoryStream();
+    while (!EndsWithHeaderBreak(raw))
+    {
+        int next = stream.ReadByte();
+        if (next < 0) return null;
+        raw.WriteByte((byte)next);
+    }
+    string headers = Encoding.UTF8.GetString(raw.ToArray());
+    int length = 0;
+    foreach (string line in headers.Split('\n'))
+    {
+        int colon = line.IndexOf(':');
+        if (colon > 0 && String.Equals(line.Substring(0, colon).Trim(), "Content-Length", StringComparison.OrdinalIgnoreCase)) Int32.TryParse(line.Substring(colon + 1).Trim(), out length);
+    }
+    byte[] body = new byte[length]; int offset = 0;
+    while (offset < length) { int read = stream.Read(body, offset, length - offset); if (read <= 0) break; offset += read; }
+    return headers + Encoding.UTF8.GetString(body, 0, offset);
+}
+
+static bool EndsWithHeaderBreak(MemoryStream stream)
+{
+    if (stream.Length < 4) return false;
+    byte[] buffer = stream.GetBuffer(); long end = stream.Length;
+    return buffer[end - 4] == 13 && buffer[end - 3] == 10 && buffer[end - 2] == 13 && buffer[end - 1] == 10;
+}

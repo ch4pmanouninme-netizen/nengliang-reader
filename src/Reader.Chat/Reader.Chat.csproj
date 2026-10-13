@@ -1,3 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><Nullable>disable</Nullable></PropertyGroup>
+  <ItemGroup>
+    <!-- The tests exercise the JSON reader, chunker and pacing rules directly; keep them internal. -->
+    <InternalsVisibleTo Include="Reader.Chat.Tests" />
+  </ItemGroup>
 </Project>
