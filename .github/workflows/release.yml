@@ -35,9 +35,13 @@ jobs:
       - run: dotnet run --project tests/Reader.Chat.Tests -c Release --no-build
       - if: runner.os == 'Windows'
         shell: pwsh
-        run: ./build/package-windows.ps1
+        run: |
+          ./build/package-windows.ps1
+          ./tests/Test-WindowsPackage.ps1 -Package ./artifacts/NengliangReader-win-x64.zip
       - if: runner.os == 'macOS'
-        run: bash build/package-macos.sh ${{ matrix.rid }}
+        run: |
+          bash build/package-macos.sh ${{ matrix.rid }}
+          bash tests/test-macos-package.sh ${{ matrix.rid }}
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.rid }}

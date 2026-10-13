@@ -34,3 +34,9 @@ jobs:
           dotnet run --project src/Reader.Desktop -c Release --no-build -- --smoke-test --data ./artifacts/smoke
           if ($LASTEXITCODE -ne 0) { throw 'Desktop smoke failed.' }
           if (!(Test-Path ./artifacts/smoke/shell-chat-smoke.ok) -or !(Test-Path ./artifacts/smoke/smoke-test.ok)) { throw 'Smoke markers missing.' }
+      - name: Windows package layout and launcher
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./build/package-windows.ps1
+          ./tests/Test-WindowsPackage.ps1 -Package ./artifacts/NengliangReader-win-x64.zip
