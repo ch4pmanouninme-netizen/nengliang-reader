@@ -1,130 +1,171 @@
-﻿# 良子小窗
+# 良子小窗（跨平台版）
 
-Windows 免安装工具：TXT / EPUB 悬浮阅读、局域网加密文字聊天。
+适用于 Windows 和 macOS 的悬浮阅读与局域网加密聊天工具。基于上游 v1.5.2 迁移，保留 TXT / EPUB、进度保存、全局快捷键，并提供链接下载与跨平台书库备份。
 
-当前客户端版本：**1.5.2，局域网测试版**。随包聊天服务仍为 1.5.0，与 1.5.0 客户端使用相同加密协议；此次只替换客户端即可。1.4 的旧聊天协议不兼容。
+**当前分支：2.0.0-preview.2，跨平台开发预览，尚未发布。** 本次上游基线为 [`f30b346`](https://github.com/ch4pmanouninme-netizen/nengliang-reader/commit/f30b3469879f3d0a72be43557fc2fadb32c1dde2)，Windows Forms v1.5.2 快照保留在 [`legacy/v1.5.2/`](legacy/v1.5.2/)。Mac 原生功能已编写，仍需真机验收；预览包不是已验证的稳定版。
+
+[发行版本](https://github.com/ch4pmanouninme-netizen/nengliang-reader/releases) · [提交问题](https://github.com/ch4pmanouninme-netizen/nengliang-reader/issues) · [更新日志](CHANGELOG.md) · [构建与发布](docs/RELEASE.md)
+
+## 功能
+
+- **统一主页**：阅读和聊天独立开关，关闭主页收进托盘，明确退出才关闭客户端。
+- **加密聊天**：兼容上游 v1.5 协议，TLS 1.2、SHA-256 指纹校验、限流、有界缓存、自动重连。
+- **独立服务**：Windows/macOS 均能启动聊天服务，客户端退出不影响独立服务。
+
+- **本地阅读**：TXT（UTF-8、UTF-16、GBK/GB18030）和 EPUB 纯文本导入，支持拖放。
+- **悬浮阅读**：1～10 行显示、拖动定位、右边缘调整宽度、字号、透明度和多种外观。
+- **阅读操作**：前后翻页、自动翻页、查找、百分比跳转，每本书一个书签。
+- **快捷控制**：自定义全局快捷键、注册失败提示、鼠标穿透、托盘/菜单栏恢复入口。
+- **进度保存**：本机自动保存、备份恢复、相同正文去重，兼容旧版书库。
+- **链接下载**：粘贴无需登录的 TXT/EPUB 文件链接，显示进度，支持取消，完成后加入书架。
+- **书库迁移**：导出 ZIP 备份，在另一台 Windows 或 Mac 上导入；重复书籍保留目的地进度。
+
+暂不支持 PDF、加密 EPUB、纯图片书籍、在线书源搜索、小说网页抓取、云同步。EPUB 只提取正文，不保留原图文排版。
+
+## 平台与验证状态
+
+| 平台 | 构建目标 | 状态 |
+| --- | --- | --- |
+| Windows x64 | `win-x64` | 发布构建与窗口冒烟检查通过；真实热键、多屏、缩放待人工验收 |
+| macOS Apple Silicon | `osx-arm64` | 发布构建通过，真机交互待验收 |
+| macOS Intel | `osx-x64` | 发布构建通过，真机交互待验收 |
+
+技术栈为 **.NET 10 + Avalonia 11.3.22**。自包含发行包无需用户额外安装 .NET。具体系统最低版本应符合 [.NET 10 支持平台](https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md)与 [Avalonia 平台要求](https://docs.avaloniaui.net/docs/supported-platforms)；本项目尚未对所有版本完成测试。
+
+Mac 在 Spaces、全屏应用、睡眠唤醒及不同键盘布局下的行为需要单独验证。普通窗口置顶不代表能覆盖所有全屏应用。
+
+当前验证记录见 [VALIDATION.md](docs/VALIDATION.md)。
+
+## 界面预览
+
+下图为 Windows 自动化冒烟检查中渲染的书架，使用内置测试正文。
+
+![Windows 书架预览](docs/images/windows-library.png)
+
+![Windows 主页](docs/images/windows-home.png)
+
+![Windows 聊天](docs/images/windows-chat.png)
 
 ## 下载与使用
 
-从 Releases 下载 `良子小窗-v1.5.2-局域网测试版.zip` 并解压。
+在 [Releases](https://github.com/ch4pmanouninme-netizen/nengliang-reader/releases) 中选择对应平台。若尚无 2.x 包，请按下方步骤从源码运行。
 
-- `客户端/良子小窗.exe`：每位使用者运行。启动后先选择“阅读”或“聊天”。
-- `聊天服务/良子小窗-聊天服务.exe`：一个房间只需在一台电脑上运行。
+- Windows：解压 `NengliangReader-win-x64.zip`，运行 `NengliangReader.exe`，保留同目录其他文件。
+- Mac：根据芯片选择 `osx-arm64` 或 `osx-x64`，打开 DMG，将应用复制到“应用程序”。带 `unsigned` 的文件是开发预览，不是已签名公证的正式安装包。
+- 本次交付的 Mac `unsigned.tar.gz` 是交叉构建的 `.app` 归档，在 Mac 解压后用于开发验收；尚未签名、公证或真机运行。正式 DMG 需在 Mac 按发布文档生成。
 
-Windows 10 / 11，需要 .NET Framework 4.8，无需安装其他运行环境。
-客户端文件夹只有 EXE、使用说明、使用前必看；服务文件夹只有 EXE、服务说明。
+### 本地阅读
 
-## 本版变化
+1. 从主页进入“阅读”，点击“打开”选择 TXT/EPUB，或将文件拖入书架。
+2. 选择书籍，点击“显示”。
+3. 拖动阅读条调整位置，拖动右边缘调整宽度。
+4. 右键打开翻页、书签、查找与设置菜单；双击阅读条返回书架。
+5. 隐藏阅读条时自动暂停；在托盘或 Mac 菜单栏选择“主页”，再进入“阅读”可关闭穿透并恢复操作。
 
-1.5.2 导航统一：阅读和聊天都通过“主页”返回主菜单，再从主菜单选择功能。取消阅读窗口及悬浮阅读菜单的聊天直达入口，托盘也统一恢复主页。返回主页不关闭子模块，不清空阅读进度、聊天连接或草稿。
+### 局域网聊天
 
-1.5.2 修正：打开或关闭阅读、聊天均不自动隐藏或显示主菜单。主菜单的可见状态只由用户操作或明确的全局隐藏快捷键改变；点击子模块“主页”属于明确返回操作。
+1. 一位使用者从主页点击“启动独立聊天服务”，选择局域网网卡地址，点击“启动服务”。
+2. 点击“复制连接信息”，通过可信渠道分享给参与者。默认端口为 `38417`；本机测试可选择 `127.0.0.1`。
+3. 每位参与者从主页进入“聊天”，点击“粘贴连接信息”，填写昵称后连接。
+4. Enter 发送，Shift+Enter 换行；“隐藏”或 Esc 保持连接；关闭聊天或“离开”断开连接并清空本机缓存。
 
-- 新增功能入口，阅读与聊天独立打开、关闭。关闭阅读不会中断聊天，关闭聊天不会关闭阅读。
-- 主入口、阅读窗口、聊天窗口统一支持企业微信浅色和 IDEA 深色。
-- 同一 Windows 用户下，聊天服务读取本机已保存的主题，约半秒跟随切换，无需重启服务。
-- 默认 TLS 1.2 加密；客户端先验证服务证书的 SHA-256 指纹，再发送房间码。没有明文降级。
-- 服务端历史、客户端显示、待处理消息和连接发送队列均有上限，停止或关闭对应模块时显式释放引用。
-- 新增模块注册、集中容量选项、协议版本和消息类型，为后续功能保留扩展入口。
+Windows 可双击 `Start-ChatServer.cmd`；从源码可运行 `dotnet run --project src/Reader.Desktop -- --server`。Mac 已安装应用也可通过主页启动独立服务。
 
-## 阅读
+兼容上游 1.5.0 服务与 1.5.2 客户端的协议 v2，**不兼容 1.4 明文协议**。服务窗口内停止/启动保留证书和房间码；关闭后重开会更换，两端需重新分享信息。
 
-主页选“阅读” → 打开 TXT / EPUB → 点“显示”。设置支持 1～10 行、字体、透明度、置顶和鼠标穿透。
-保留书签、查找、进度跳转、自动翻页和进度保存。阅读离线使用，不上传小说正文。
+默认最多 30 人、单条 500 字符、每连接每 10 秒 8 条消息。服务历史最多 100 条，客户端显示最多 150 条，待处理消息最多 182 条，每连接发送队列最多 160 条。断线后每 5 秒重试；错误指纹、错误房间码或重复昵称需用户修正后重连。重连只恢复服务端仍保留的历史，不保证消息不丢失。
 
-## 聊天
+TLS 保护客户端到服务端的传输，服务端可以读取消息，不是端到端加密。指纹必须通过可信渠道获取。应用不安装信任证书；Windows 使用用户密钥容器，macOS 使用 .NET 管理的临时钥匙串。详见 [跨平台证书说明](https://learn.microsoft.com/en-us/dotnet/standard/security/cross-platform-cryptography#read-a-pkcs12pfx)。
 
-1. 一台电脑打开聊天服务，选网线对应的 IPv4 地址，点击“启动服务”。
-2. 点击“复制连接信息”，通过可信渠道发送给同事。
-3. 同事在主页选“聊天”，点“粘贴连接信息”，填写昵称，再点“连接”。
+服务仅读取本机主题偏好，不写入书库。退出客户端不会停止独立服务；关闭服务会断开所有连接并清空服务历史。当前只实现文字聊天，无图片附件、账号或审计，不自动配置防火墙。
 
-复制的信息包含服务地址、端口、房间码及服务指纹，不要删掉指纹，也不要转给无关人员。
-默认端口 `38417`。有线网络可以使用，不要求 Wi-Fi；前提是两台电脑能连通该端口。
-本机自测地址可填 `127.0.0.1`；其他电脑填写服务电脑的局域网地址。
-优先列出有线网卡地址，但虚拟网卡较多时仍需人工确认。
+### 链接下载
 
-服务每次重新打开会生成新的证书和房间码，需重新复制连接信息。
-在同一个服务窗口内停止后再启动，证书和房间码保持，客户端可自动重连。
-关闭聊天窗口会断开并清空本机缓存；“—”或 Esc 只是隐藏，连接继续保持。
-隐藏的聊天可从主页重新打开；托盘菜单“主页”可恢复主菜单；点“离开”也会断开并清空本机聊天内容。
+点击“链接下载”，粘贴 **HTTP/HTTPS 文件下载链接**。链接可以不带文件后缀，但服务器必须返回可识别的 TXT 或 EPUB 内容。小说介绍页、章节网页、需要登录的链接不适用。
 
-## 缓存与内存
+下载最长等待 5 分钟，最多跟随 5 次重定向。TXT 导入上限 24 MB；EPUB 文件上限 100 MB，正文展开另有 24 MB 限制。失败后重新点击“链接下载”重试；当前版本不支持断点续传。
 
-默认服务端只保留最近 **100 条消息**，超出时立即淘汰最旧条目。
-客户端显示最多 **150 条消息或状态提示**，待处理接收队列最多 **182 条**，每连接发送队列最多 **160 条**。
-界面拥堵达到接收队列上限会断开，随后重连并读取服务端仍保留的最近消息；不保证补回所有消息。
-单条文字最多 **500 字符**，默认最多 **30 人**，单连接每 10 秒最多发送 8 条文字消息。
+请仅下载你有权获取的电子书。软件不提供书源、账号登录或绕过付费的功能。
 
-- 隐藏窗口：保留连接，缓存继续按上限滚动。
-- 关闭聊天或离开房间：清空本机显示及待处理消息，释放连接；不会删除服务端或其他人的消息。
-- 停止/关闭服务：清空服务端历史及连接队列；不会远程擦除别人已经显示的消息。
-- 关闭阅读：保存进度，释放当前正文和悬浮窗，保留已导入书籍的本地文件。
-- 退出良子小窗：关闭所有客户端模块。独立启动的聊天服务仍需单独停止。
+### 默认快捷键
 
-聊天内容不写入聊天日志或历史文件。内存引用释放后由 .NET 回收，任务管理器中的占用不一定立即下降；不承诺安全擦除内存或系统分页文件。
+Windows 使用 `Ctrl + Alt`，Mac 使用 `Control + Option`，再加下表按键：
 
-## 网络安全
-
-公司内网不能作为“不会被监听”的保证。本版提供 TLS 1.2 传输加密、服务证书指纹校验、房间码校验、限流、长度限制和有界队列。
-服务端使用临时自签名证书，不安装到 Windows 信任证书库；私钥由 Windows 用户密钥容器支持，程序不导出证书或私钥文件。
-服务指纹必须通过可信渠道获取；如连接信息本身被替换，单靠指纹无法确认你原本想连接的服务。
-这是客户端到服务端的加密，服务电脑仍能读取和转发消息，**不是端到端加密**。
-昵称不是实名账号，拥有房间码的人可以加入；暂不提供账号、权限分组和审计。
-不自动修改防火墙或路由，不自动扫描同事电脑；仍只面向局域网测试，不直接映射公网。
-
-尚未验证具体公司的两台电脑是否互通，也未经公司安全审批或独立安全审计。
-如果公司要求统一身份、审计、证书管理或集中部署，需要按实际要求继续对接。
-
-## 快捷键与外观
-
-| 快捷键 | 功能 |
+| 按键 | 功能 |
 | --- | --- |
-| Ctrl + Alt + H | 隐藏/恢复之前可见的入口、阅读和聊天窗口 |
-| Ctrl + Alt + ← / → | 阅读上一页/下一页 |
-| Ctrl + Alt + 空格 | 阅读自动翻页/暂停 |
-| Ctrl + Alt + M | 阅读鼠标穿透开关 |
-| Enter / Shift+Enter | 聊天发送/换行 |
-| Esc | 隐藏当前窗口 |
+| H | 隐藏 / 恢复此前可见的主页、阅读和聊天窗口 |
+| → | 下一页 |
+| ← | 上一页 |
+| M | 切换鼠标穿透 |
+| Space | 自动阅读 / 暂停 |
 
-关闭主入口会收进托盘。只有托盘里的“退出良子小窗”会关闭全部客户端模块。
-主题属于本机偏好，不强制改变其他同事电脑的主题。服务在另一台电脑或另一个 Windows 账户运行时，跟随那里的本机设置。
+在书架“快捷键”中可以修改；注册失败会显示在书架底部。Mac 使用注册热键方式，键位表现仍需在目标键盘布局上验收。
 
-## 编译与验证
+阅读条获得焦点后，方向键/PageUp/PageDown 翻页，Space 切换自动阅读，Esc 隐藏；Ctrl（Mac 也支持 Command）+ B/J/F/G 分别保存书签、回书签、查找、跳转。
 
-在解压后的源码根目录用 Windows PowerShell 执行：
+## 数据与隐私
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\source\build.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\source\build-server.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\source\test.ps1
+| 系统 | 数据目录 |
+| --- | --- |
+| Windows | `%LOCALAPPDATA%\NengliangReader` |
+| macOS | `~/Library/Application Support/NengliangReader` |
+
+正文位于 `books/`，进度与偏好位于 `state.xml`，快捷键位于 `hotkeys.json`。保存使用临时文件替换并保留 `.bak`；损坏时优先读取备份。旧版程序旁边的 `data/` 目录会在目标书库不存在时复制迁移，保留原文件。
+
+正常本地阅读不访问网络。链接下载访问目标服务器及重定向地址；聊天访问用户填写的服务地址；启动服务只监听所选网卡和端口。不上传书库，不包含遥测或广告。开发时恢复依赖会连接 NuGet。聊天只保存地址、端口和昵称；不保存房间码、指纹和聊天正文。
+
+使用“书库备份 → 导出书库”备份书籍与进度；导入时合并书籍，重复书籍不覆盖当前进度。备份不包含全局快捷键；导入不会覆盖目标设备外观或窗口位置。单个备份导入上限为展开后 256 MB。
+
+## 从源码运行
+
+先安装 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)，再执行：
+
+```sh
+git clone https://github.com/ch4pmanouninme-netizen/nengliang-reader.git
+cd nengliang-reader
+dotnet restore NengliangReader.sln --configfile NuGet.Config
+dotnet build NengliangReader.sln -c Release --no-restore
+dotnet run --project src/Reader.Desktop -c Release --no-build
 ```
 
-构建使用本机 .NET Framework 编译器，不下载依赖。测试只连接 `127.0.0.1`，会临时打开测试窗口。
-1.5.0 基线验证：35 项阅读核心断言、32 项阅读界面检查、62 项聊天/安全/主题检查，共 129 项通过。
-1.5.2 本次重新编译客户端，运行 **16 项主菜单生命周期与导航回归检查，全部通过**；未重复执行未改动的聊天网络检查。
-包括真实 TLS 多客户端收发、错误指纹拒绝、明文拒绝、历史淘汰、界面队列上限、独立关闭和退出清理。
+上述命令适用于包含 2.x 源码的分支；若主分支尚未合并，请先切换到对应开发分支。
 
-## 源码与后续扩展
+使用独立书库测试：
 
-- `source/AppShell.cs`：主入口、模块注册、托盘和整体退出。
-- `source/Reader.cs`：阅读模块、书籍和进度。
-- `source/ChatClient.cs`：聊天模块、网络连接、有界接收和显示。
-- `source/ChatServer.cs`：房间服务、历史和连接容量、服务窗口。
-- `source/ChatSecurity.cs`：证书、TLS、集中容量选项 `ChatOptions`。
-- `source/ChatShared.cs`：带版本及 `ContentType` 的消息协议。
-- `source/AppUi.cs`：共享外观及本机主题读取。
-- `source/*.Tests.cs`：验证；`source/ChatServerAssembly.cs`：服务版本。
+```sh
+dotnet run --project src/Reader.Desktop -- --data ./artifacts/test-library
+```
 
-扩展方式和边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。当前只实现文字聊天；图片、附件、链接点击预览等尚未实现。
-正文、书签、设置沿用 `%LOCALAPPDATA%\NengliangReader`。房间码、服务指纹、聊天记录不保存。
-详细操作见 [使用说明.txt](使用说明.txt) 和 [聊天服务说明.txt](聊天服务说明.txt)。
+## 测试与打包
 
-## 发布到 GitHub
+```sh
+dotnet run --project tests/Reader.Core.Tests -c Release
+dotnet run --project tests/Reader.Chat.Tests -c Release
+```
 
-源码包解压后，将 README、LICENSE、ARCHITECTURE.md、说明文件和 source 文件夹更新到仓库。
-随后创建 `v1.5.2` Release，上传 `良子小窗-v1.5.2-局域网测试版.zip`，建议勾选预发布。
-GitHub 自动生成的 Source code 压缩包不能替代可运行程序包；本项目不需要发布 Packages。
+测试是控制台回归程序，失败返回非零退出码。覆盖编码、EPUB 章节顺序、分页、进度与备份、链接下载、取消、重定向和书库迁移。请使用 `dotnet run`，而非 `dotnet test`。
 
-## 许可
+Windows：`pwsh ./build/package-windows.ps1`。Mac：`bash build/package-macos.sh osx-arm64` 或 `osx-x64`。详细签名、公证、验证清单和 GitHub 草稿发布流程见 [发布文档](docs/RELEASE.md)。
 
-[MIT License](LICENSE)。
+## 项目结构
+
+```text
+src/Reader.Core/               导入、阅读会话、存储、下载与书库备份
+src/Reader.Chat/               v1.5 兼容协议、TLS、服务与客户端连接
+src/Reader.Desktop/            Avalonia 界面与交互
+src/Reader.Platform.Windows/   Windows 热键和鼠标穿透
+src/Reader.Platform.Mac/       macOS 热键和鼠标穿透
+tests/Reader.Core.Tests/       跨平台回归测试
+tests/Reader.Chat.Tests/       TLS、协议边界与上游互通测试
+build/                        安装包与签名脚本
+docs/                         实施范围、验证与发布说明
+legacy/                       历史 Windows Forms 源码，含 v1.5.2 快照
+```
+
+贡献方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。反馈问题时请提供应用版本、系统/芯片、操作步骤及错误提示，不要公开个人书籍或敏感下载链接。
+
+## 许可证
+
+[MIT License](LICENSE)。依赖组件遵循各自许可证；许可不包含用户导入电子书的版权授权。
+
+
