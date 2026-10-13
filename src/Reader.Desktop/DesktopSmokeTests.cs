@@ -4,6 +4,7 @@ using Reader.Chat;
 using Reader.Core;
 using System.Collections.Concurrent;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Reflection;
 
@@ -61,7 +62,33 @@ internal static class DesktopSmokeTests
         await client.ConnectAsync("127.0.0.1", port, "服务测试", Field<TextBox>(serviceUi, "code").Text!, service.Fingerprint);
         Check(client.Connected, "service window starts real TLS server"); Capture(serviceUi, Path.Combine(store.Root, "server.png"));
         Click(serviceUi, "toggle"); await Wait(() => !client.Connected); serviceUi.Close();
-        File.WriteAllText(Path.Combine(store.Root, "shell-chat-smoke.ok"), "Home lifecycle, independent close, TLS UI send/receive, global hide/restore, reconnect, cache cleanup, server window passed.");
+        // The assistant joins through whichever address the window binds, so a LAN deployment keeps working.
+        // Binding to a non-loopback address is what makes that wiring observable: a hardcoded loopback dial
+        // would leave the room empty forever while the status line still claimed the assistant had joined.
+        IPAddress? lan = NetworkInterface.GetAllNetworkInterfaces()
+            .Where(n => n.OperationalStatus == OperationalStatus.Up)
+            .OrderBy(n => n.NetworkInterfaceType == NetworkInterfaceType.Ethernet ? 0 : 1)
+            .SelectMany(n => n.GetIPProperties().UnicastAddresses).Select(a => a.Address)
+            .FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(a) && !a.ToString().StartsWith("169.254."));
+        if (lan == null) Console.WriteLine("Desktop smoke: no LAN address, skipping the assistant bind check");
+        else
+        {
+            reserve = new TcpListener(IPAddress.Loopback, 0); reserve.Start(); int agentPort = ((IPEndPoint)reserve.LocalEndpoint).Port; reserve.Stop();
+            var lanUi = new ServerWindow(); lanUi.Show();
+            Field<ComboBox>(lanUi, "address").SelectedItem = lan.ToString(); Field<TextBox>(lanUi, "port").Text = agentPort.ToString();
+            Field<CheckBox>(lanUi, "agentEnabled").IsChecked = true;
+            Field<TextBox>(lanUi, "agentEndpoint").Text = "http://127.0.0.1:1/v1/chat";
+            Field<TextBox>(lanUi, "agentKey").Text = "smoke-key"; Field<TextBox>(lanUi, "agentModel").Text = "smoke-model";
+            Field<TextBox>(lanUi, "agentNick").Text = "小助手";
+            Click(lanUi, "toggle"); var lanService = Field<ChatServer>(lanUi, "server");
+            try { await Wait(() => lanService.Online == 1); }
+            catch (Exception ex) { throw new InvalidOperationException(Field<TextBlock>(lanUi, "status").Text, ex); }
+            // The old defect was invisible precisely because the window reported success either way.
+            await Wait(() => (Field<TextBlock>(lanUi, "status").Text ?? "").Contains("助手：已加入房间"));
+            Capture(lanUi, Path.Combine(store.Root, "server-lan.png"));
+            Click(lanUi, "toggle"); lanUi.Close();
+        }
+        File.WriteAllText(Path.Combine(store.Root, "shell-chat-smoke.ok"), "Home lifecycle, independent close, TLS UI send/receive, global hide/restore, reconnect, cache cleanup, server window, assistant on a LAN bind passed.");
         library.RestoreLibrary();
     }
     private static void Capture(Window window, string path)

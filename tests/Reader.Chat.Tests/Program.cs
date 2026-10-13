@@ -2,6 +2,7 @@ using Reader.Chat;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Text;
@@ -129,7 +130,7 @@ try
     {
         service.Start(IPAddress.Loopback, 0);
         var agentSettings = new AgentOptions("http://127.0.0.1:" + agentPort + "/v1/chat", "test-key", "test-model", "小助手", "", true, true, 2000, 480);
-        using (var bridge = new AgentBridge(agentSettings, service.Port, room, service.Fingerprint, new ChatOptions(sendBurst: 100)))
+        using (var bridge = new AgentBridge(agentSettings, "127.0.0.1", service.Port, room, service.Fingerprint, new ChatOptions(sendBurst: 100)))
         using (var asker = new ChatConnection())
         {
             var seen = new ConcurrentQueue<ChatPacket>();
@@ -148,6 +149,34 @@ try
             Check(requests.Count == 1, "agent never answers its own messages, so the room cannot loop");
             Check(seen.Count(p => p.Kind == "message" && p.Nick == "小助手") == answers.Length, "no runaway repeat answers arrive after the reply settles");
         }
+    }
+    // A bind to one specific address does not answer on loopback, so the bridge has to dial back the
+    // address the service was actually handed. Hardcoding 127.0.0.1 stranded the assistant on every
+    // LAN deployment while the service window still reported that it had joined the room.
+    IPAddress? lan = NetworkInterface.GetAllNetworkInterfaces()
+        .Where(n => n.OperationalStatus == OperationalStatus.Up)
+        .OrderBy(n => n.NetworkInterfaceType == NetworkInterfaceType.Ethernet ? 0 : 1)
+        .SelectMany(n => n.GetIPProperties().UnicastAddresses).Select(a => a.Address)
+        .FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(a) && !a.ToString().StartsWith("169.254."));
+    if (lan == null) Console.WriteLine("SKIP assistant reaches a non-loopback bind (no LAN address on this machine)");
+    else
+    {
+        try
+        {
+            using var agentCertificate = ChatSecurity.CreateCertificate();
+            using var service = new ChatServer(room, new ChatOptions(sendBurst: 100), agentCertificate);
+            service.Start(lan, 0);
+            var agentSettings = new AgentOptions("http://127.0.0.1:" + agentPort + "/v1/chat", "test-key", "test-model", "小助手", "", true, true, 2000, 480);
+            using var bridge = new AgentBridge(agentSettings, lan.ToString(), service.Port, room, service.Fingerprint, new ChatOptions(sendBurst: 100));
+            using var asker = new ChatConnection();
+            var seen = new ConcurrentQueue<ChatPacket>();
+            asker.Received += seen.Enqueue;
+            await asker.ConnectAsync(lan.ToString(), service.Port, "同网段的人", room, service.Fingerprint);
+            await Wait(() => service.Online == 2, "assistant joins a room bound to a non-loopback address", 25);
+            await asker.SendAsync("@小助手 局域网里也能用吗");
+            await Wait(() => seen.Any(p => p.Nick == "小助手" && p.Kind == "message"), "assistant answers in a room bound to a non-loopback address", 25);
+        }
+        catch (SocketException ex) { Console.WriteLine("SKIP assistant reaches a non-loopback bind (" + ex.Message + ")"); }
     }
     endpoint.Stop();
 

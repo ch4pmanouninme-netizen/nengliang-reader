@@ -61,7 +61,7 @@ internal sealed class ServerWindow : Window
         panel.Children.Add(UiActions.Row(UiActions.Labeled("密钥", agentKey), UiActions.Labeled("模型", agentModel)));
         panel.Children.Add(UiActions.Row(UiActions.Labeled("昵称", agentNick), UiActions.Labeled("触发方式", agentTrigger)));
         panel.Children.Add(agentState);
-        panel.Children.Add(new TextBlock { Text = "助手以本机回环成员身份加入房间，可被 @昵称 提问。端点必须是 https，只有 127.0.0.1 允许 http，因为密钥随请求头发送。应答直接广播给全房间，没有人工审核。", TextWrapping = TextWrapping.Wrap, FontSize = 12 });
+        panel.Children.Add(new TextBlock { Text = "助手通过上面选中的监听地址加入房间，可被 @昵称 提问。端点必须是 https，只有 127.0.0.1 允许 http，因为密钥随请求头发送。应答直接广播给全房间，没有人工审核。", TextWrapping = TextWrapping.Wrap, FontSize = 12 });
         panel.Children.Add(status); panel.Children.Add(UiActions.Row(toggle, copy));
         panel.Children.Add(new TextBlock { Text = "仅向可信人员分享完整连接信息。传输加密，服务电脑可以读取消息。", TextWrapping = TextWrapping.Wrap });
         Content = new ScrollViewer { Content = panel };
@@ -155,11 +155,15 @@ internal sealed class ServerWindow : Window
             {
                 if (!int.TryParse(port.Text, out int number) || number is < 1024 or > 65535) throw new ArgumentException("端口范围为 1024～65535。");
                 AgentOptions? agent = agentEnabled.IsChecked == true ? ReadAgentSettings() : null;
-                server = new ChatServer(code.Text, chatOptions, certificate); server.Start(IPAddress.Parse((string)address.SelectedItem!), number);
+                string host = (string)address.SelectedItem!;
+                server = new ChatServer(code.Text, chatOptions, certificate); server.Start(IPAddress.Parse(host), number);
                 if (agent != null)
                 {
                     AgentConfig.Save(AgentPath, agent);
-                    bridge = new AgentBridge(agent, server.Port, code.Text!.Trim(), server.Fingerprint, chatOptions);
+                    // The bridge joins through the very address the service binds. Hardcoding 127.0.0.1 here
+                    // used to strand the assistant on every non-loopback deployment while the status line
+                    // still reported that it had joined.
+                    bridge = new AgentBridge(agent, host, server.Port, code.Text!.Trim(), server.Fingerprint, chatOptions);
                     agentState.Text = "助手已启动，正在加入房间。";
                 }
                 status.Text = $"TLS 加密 · 在线 0 / {chatOptions.ParticipantLimit} 人 · 端口 {server.Port}";

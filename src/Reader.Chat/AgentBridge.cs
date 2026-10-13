@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -442,7 +443,7 @@ namespace Reader.Chat
         }
     }
 
-    // Joins the room as an ordinary loopback client so the service keeps applying every existing limit:
+    // Joins the room as an ordinary local client so the service keeps applying every existing limit:
     // message length, 8-per-10s burst, participant cap, nickname uniqueness, history and online count.
     public sealed class AgentBridge : IDisposable
     {
@@ -450,7 +451,7 @@ namespace Reader.Chat
         private readonly ChatOptions chat;
         private readonly AgentClient client;
         private readonly int port;
-        private readonly string code, fingerprint;
+        private readonly string host, code, fingerprint;
         private readonly object gate = new object();
         private readonly Queue<ChatPacket> questions = new Queue<ChatPacket>();
         private readonly BlockingCollection<string> outbox = new BlockingCollection<string>(OutboxLimit);
@@ -465,12 +466,25 @@ namespace Reader.Chat
         private const int OutboxLimit = 64;
         public string Status { get { return status; } }
 
-        public AgentBridge(AgentOptions options, int port, string code, string fingerprint, ChatOptions chat = null)
+        // host is the address the service was told to listen on, exactly as the server window picked
+        // it. Reachable below maps a wildcard bind to loopback, which is what such a bind accepts.
+        public AgentBridge(AgentOptions options, string host, int port, string code, string fingerprint, ChatOptions chat = null)
         {
-            this.options = options; this.port = port; this.code = code; this.fingerprint = fingerprint;
+            this.options = options; this.host = Reachable(host); this.port = port; this.code = code; this.fingerprint = fingerprint;
             this.chat = chat ?? new ChatOptions(); client = new AgentClient(options);
             retry = new Timer(delegate { Reconnect(); }, null, 1500, 2000);
             pump = new Timer(delegate { Flush(); }, null, 400, 250);
+        }
+
+        // The service binds exactly one address, and a bind to a specific address does not answer on
+        // loopback, so the bridge has to dial back that same address. A wildcard bind is the exception:
+        // it accepts loopback connections but is not itself a connectable destination.
+        private static string Reachable(string host)
+        {
+            string trimmed = (host ?? "").Trim();
+            IPAddress parsed;
+            if (trimmed.Length == 0 || !IPAddress.TryParse(trimmed, out parsed)) return "127.0.0.1";
+            return parsed.Equals(IPAddress.Any) || parsed.Equals(IPAddress.IPv6Any) ? "127.0.0.1" : trimmed;
         }
 
         private void Reconnect()
@@ -498,7 +512,7 @@ namespace Reader.Chat
             connection = candidate;
             try
             {
-                candidate.ConnectAsync("127.0.0.1", port, options.Nick, code, fingerprint).GetAwaiter().GetResult();
+                candidate.ConnectAsync(host, port, options.Nick, code, fingerprint).GetAwaiter().GetResult();
                 backoff = 2; status = "已加入房间";
             }
             catch (Exception ex)
