@@ -82,7 +82,8 @@ if (!(Invoke-Publish $repo $ReaderStagingDir)) {
     # 「已经退回去了」—— 用户据此判断要不要再点启动。
     $rollback = Invoke-Captured 'git' @('-C', $repo, 'reset', '--hard', $before)
     if ($rollback.Code -ne 0) {
-        Fail ('编译失败，而且代码没能自动退回去。请手动执行 git -C ' + $repo + ' reset --hard ' + $before + ' 再重试。现在跑的还是原来的程序，可以直接启动。')
+        # 路径加引号：这条是给用户照抄的命令，仓库路径里有空格时裸着会敲不动。
+        Fail ('编译失败，而且代码没能自动退回去。请手动执行 git -C "' + $repo + '" reset --hard ' + $before + ' 再重试。现在跑的还是原来的程序，可以直接启动。')
     }
     Fail '编译失败，代码已经退回更新前那一版。现在运行的还是原来的程序，可以直接启动。'
 }
