@@ -32,11 +32,11 @@ internal static class Dialogs
         await window.ShowDialog(owner);
     }
 
-    public static async Task<bool> Confirm(Window owner, string title, string message)
+    public static async Task<bool> Confirm(Window owner, string title, string message, string confirmText = "删除", string cancelText = "取消")
     {
         var window = Base(title); window.Name = "ConfirmationDialog";
-        var confirm = new Button { Name = "Confirm", Content = "删除" };
-        var cancel = new Button { Name = "Cancel", Content = "取消", IsDefault = true, IsCancel = true };
+        var confirm = new Button { Name = "Confirm", Content = new TextBlock { Text = confirmText, MaxWidth = 190, TextWrapping = TextWrapping.Wrap } };
+        var cancel = new Button { Name = "Cancel", Content = new TextBlock { Text = cancelText, MaxWidth = 190, TextWrapping = TextWrapping.Wrap }, IsDefault = true, IsCancel = true };
         confirm.Click += (_, _) => window.Close(true); cancel.Click += (_, _) => window.Close(false);
         window.Content = new StackPanel { Margin = new Thickness(24), Spacing = 16, Children = {
             new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },

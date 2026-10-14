@@ -1,3 +1,5 @@
+using System.Reflection;
+
 namespace Reader.Chat;
 
 /// <summary>Interoperable with the connection text copied by the upstream 1.5 server.</summary>
@@ -23,5 +25,8 @@ public sealed record ConnectionInfo(string Host, int Port, string Code, string F
             || !fields.TryGetValue("服务指纹", out var fingerprint)) throw new ArgumentException("请粘贴含指纹的完整连接信息。");
         var info = new ConnectionInfo(host, number, code, fingerprint); info.Validate(); return info;
     }
-    public override string ToString() => $"良子小窗 1.5\n服务地址：{Host}\n端口：{Port}\n房间码：{Code}\n服务指纹：{Fingerprint}";
+    private static string AppVersion => typeof(ConnectionInfo).Assembly
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion.Split('+')[0];
+
+    public override string ToString() => $"良子小窗-v{AppVersion}\n服务地址：{Host}\n端口：{Port}\n房间码：{Code}\n服务指纹：{Fingerprint}";
 }

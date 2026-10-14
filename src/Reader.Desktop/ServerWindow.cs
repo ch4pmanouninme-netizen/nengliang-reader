@@ -6,6 +6,8 @@ using Avalonia.Threading;
 using Reader.Chat;
 using Reader.Core;
 using Avalonia.Styling;
+using Avalonia.Layout;
+using Avalonia.Markup.Xaml.MarkupExtensions;
 using System.Xml;
 using System.Xml.Linq;
 using System.Net;
@@ -25,6 +27,8 @@ internal sealed class ServerWindow : Window
     private readonly Button toggle = new() { Content = "启动服务" }, copy = new() { Content = "复制连接信息", IsEnabled = false };
     private readonly X509Certificate2 certificate = ChatSecurity.CreateCertificate();
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private readonly DispatcherTimer copyNoticeTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly Border copyNotice = UiThemes.Header(new TextBlock { Text = "复制成功 (๑•̀ㅂ•́)و✧" });
     // The status line and the agent's chunk size both derive from this, not from a hardcoded copy of the defaults.
     private readonly ChatOptions chatOptions = new();
     private readonly CheckBox agentEnabled = new() { Content = "启用助手（作为房间成员加入）" };
@@ -64,7 +68,17 @@ internal sealed class ServerWindow : Window
         panel.Children.Add(new TextBlock { Text = "助手通过上面选中的监听地址加入房间，可被 @昵称 提问。端点必须是 https，只有 127.0.0.1 允许 http，因为密钥随请求头发送。应答直接广播给全房间，没有人工审核。", TextWrapping = TextWrapping.Wrap, FontSize = 12 });
         panel.Children.Add(status); panel.Children.Add(UiActions.Row(toggle, copy));
         panel.Children.Add(new TextBlock { Text = "仅向可信人员分享完整连接信息。传输加密，服务电脑可以读取消息。", TextWrapping = TextWrapping.Wrap });
-        Content = new ScrollViewer { Content = panel };
+        copyNotice.IsVisible = false;
+        copyNotice.HorizontalAlignment = HorizontalAlignment.Center;
+        copyNotice.VerticalAlignment = VerticalAlignment.Bottom;
+        copyNotice.Margin = new Thickness(20);
+        copyNotice.Padding = new Thickness(16, 10);
+        copyNotice.CornerRadius = new CornerRadius(8);
+        copyNotice.BorderThickness = new Thickness(1);
+        copyNotice.IsHitTestVisible = false;
+        copyNotice.Bind(Border.BorderBrushProperty, new DynamicResourceExtension("ReaderHeaderForeground"));
+        copyNoticeTimer.Tick += (_, _) => { copyNotice.IsVisible = false; copyNoticeTimer.Stop(); };
+        Content = new Grid { Children = { new ScrollViewer { Content = panel }, copyNotice } };
         toggle.Click += (_, _) => Toggle();
         agentEnabled.PropertyChanged += (_, e) => { if (e.Property == ToggleButton.IsCheckedProperty) SyncAgentFields(); };
         copy.Click += async (_, _) =>
@@ -73,6 +87,9 @@ internal sealed class ServerWindow : Window
             {
                 if (server == null || Clipboard == null) return;
                 await Clipboard.SetTextAsync(new ConnectionInfo((string)address.SelectedItem!, server.Port, code.Text!.Trim(), server.Fingerprint).ToString());
+                if (closed) return;
+                copyNotice.IsVisible = true;
+                copyNoticeTimer.Stop(); copyNoticeTimer.Start();
             }
             catch (Exception ex) { status.Text = "复制失败：" + ex.Message; }
         };
@@ -85,10 +102,15 @@ internal sealed class ServerWindow : Window
         {
             if (server == null || confirmed) return;
             e.Cancel = true; if (confirming) return; confirming = true;
-            try { if (await Dialogs.Prompt(this, "关闭聊天服务", "关闭会断开所有人并清空历史。输入“关闭”确认。") == "关闭") { confirmed = true; Close(); } }
+            try
+            {
+                if (await Dialogs.Confirm(this, "关闭聊天服务",
+                    "是否确认关闭聊天服务？(｡•́︿•̀｡)\n你是主机哦 awa，你关了大家都没得聊了 qwq\n关闭会断开所有人并清空聊天历史。",
+                    "不聊？那就都别聊了！(╯°□°)╯", "接着奏乐接着舞 ヾ(≧▽≦*)o")) { confirmed = true; Close(); }
+            }
             finally { confirming = false; }
         };
-        Closed += (_, _) => { closed = true; timer.Stop(); StopAgent(); server?.Dispose(); certificate.Dispose(); code.Clear(); };
+        Closed += (_, _) => { closed = true; timer.Stop(); copyNoticeTimer.Stop(); StopAgent(); server?.Dispose(); certificate.Dispose(); code.Clear(); };
         LoadAgentSettings(); SyncAgentFields();
         _ = RefreshTheme(); timer.Start();
     }

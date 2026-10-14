@@ -48,7 +48,11 @@ try
     server.Start(IPAddress.Loopback, 0);
     string pin = server.Fingerprint;
     var info = new ConnectionInfo("127.0.0.1", server.Port, room, pin);
+    string version = typeof(ConnectionInfo).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+        .Cast<System.Reflection.AssemblyInformationalVersionAttribute>().Single().InformationalVersion.Split('+')[0];
+    Check(info.ToString().Split('\n')[0] == "良子小窗-v" + version, "connection header follows application version without build metadata");
     Check(ConnectionInfo.Parse(info.ToString()) == info, "upstream connection text roundtrip");
+    Check(ConnectionInfo.Parse(info.ToString().Replace("良子小窗-v" + version, "良子小窗 1.5")) == info, "legacy 1.5 connection text remains readable");
     await Reject(() => { ConnectionInfo.Parse("服务地址：127.0.0.1"); return Task.CompletedTask; }, "incomplete connection info rejected");
     using var alice = new ChatConnection(); using var bob = new ChatConnection();
     var received = new ConcurrentQueue<ChatPacket>(); bob.Received += received.Enqueue;
