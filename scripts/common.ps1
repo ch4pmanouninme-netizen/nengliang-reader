@@ -96,6 +96,31 @@ function Stop-Reader($arguments) {
     }
 }
 
+# 跑一个原生命令（git / dotnet），把 stdout 和 stderr 一起接住，返回 @{ Output; Code }。
+#
+# 这里必须绕一道弯，不能直接写 `$output = @(& $file @args 2>&1)`：只要子进程往 stderr 写了一行，
+# PowerShell 5.1 就会在「输出被接住」的情况下把它变成一个错误记录，而本文件里
+# $ErrorActionPreference = 'Stop' 会让这个错误记录终止整个脚本。后果实测过：机器上没有
+# .NET SDK 10 时，「更新」在编译那一步直接中断，既没打印下面那行人话，也没把代码退回
+# 更新前那一版，代码和 run\ 就此错开 —— 正是 scripts/README.md 保证不会发生的那种情况。
+# 捕获期间把 EAP 压回 Continue，输出和退出码照旧准确，判断交给调用方。
+function Invoke-Captured($file, $arguments) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        # 混合流里的 stderr 行是错误记录，直接拼字符串会打出
+        # 「System.Management.Automation.RemoteException」这种占位符，把原始报错盖掉。
+        $output = @(& $file @arguments 2>&1 | ForEach-Object {
+            if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.Exception.Message }
+            elseif ($_ -is [System.Exception]) { $_.Message }
+            else { $_ }
+        })
+        $code = $LASTEXITCODE
+    }
+    finally { $ErrorActionPreference = $previous }
+    return [pscustomobject]@{ Output = $output; Code = $code }
+}
+
 # 发布成功返回 $true；失败只说明原因并返回 $false，好让 update 有机会先把代码退回去。
 function Invoke-Publish($repoRoot, $destination) {
     Assert-Command 'dotnet' '请先装 .NET SDK 10（https://dotnet.microsoft.com/download/dotnet/10.0），注意是 SDK 不是 Runtime。'
@@ -109,10 +134,11 @@ function Invoke-Publish($repoRoot, $destination) {
     # dotnet 的输出必须先接住再经 Write-Host 转出去。直接 & dotnet publish 的话，它的每一行都会
     # 变成这个函数的「返回值」，调用方拿到的是一个非空数组 + $false —— 非空数组恒为真，于是
     # 编译失败会被当成成功，把残缺的 staging 切换上去，毁掉正在用的版本。
-    $output = @(& dotnet publish $project -c Release -r win-x64 --self-contained true -m:1 -o $destination 2>&1)
-    $code = $LASTEXITCODE
-    $output | ForEach-Object { Write-Host ('   ' + $_) }
-    if ($code -ne 0) { Write-Note 'dotnet publish 失败了，上面是它的原始输出。'; return $false }
+    # 用 Invoke-Captured 而不是就地 2>&1，是为了让 stderr 上的报错（比如这台机器没装 SDK）也
+    # 老老实实走到下面那行 return $false，而不是把脚本打断在编译这一步。
+    $publish = Invoke-Captured 'dotnet' @('publish', $project, '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-m:1', '-o', $destination)
+    $publish.Output | ForEach-Object { Write-Host ('   ' + $_) }
+    if ($publish.Code -ne 0) { Write-Note 'dotnet publish 失败了，上面是它的原始输出。'; return $false }
     if (!(Test-Path -LiteralPath (Join-Path $destination $ReaderAppName))) {
         Write-Note ('编译结果里没有 ' + $ReaderAppName + '。')
         return $false

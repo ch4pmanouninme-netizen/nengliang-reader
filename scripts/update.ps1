@@ -24,8 +24,10 @@ $repo = Resolve-RepoRoot $RepoRoot
 $arguments = Resolve-Arguments $AppArguments
 
 Assert-Command 'git' '请先装 Git for Windows（https://git-scm.com/download/win）。'
-$inside = @(& git -C $repo rev-parse --is-inside-work-tree 2>$null)
-if ($LASTEXITCODE -ne 0 -or $inside.Count -eq 0 -or $inside[0].Trim() -ne 'true') {
+# 下面几处都用 Invoke-Captured 而不是就地 2>$null：git 报错走的是 stderr，直接接住的话
+# PowerShell 5.1 会把它变成终止性错误，脚本当场中断 —— 该打印的人话提示反而打不出来。
+$inside = Invoke-Captured 'git' @('-C', $repo, 'rev-parse', '--is-inside-work-tree')
+if ($inside.Code -ne 0 -or $inside.Output.Count -eq 0 -or $inside.Output[0].Trim() -ne 'true') {
     Fail ($repo + ' 不是 git 仓库。请先 git clone 拿到代码，然后双击仓库里的 scripts\install.bat 生成快捷方式。')
 }
 
@@ -33,8 +35,9 @@ Write-Step '先停止正在运行的程序'
 Stop-Reader $arguments
 
 if (!$Branch) {
-    $tracking = @(& git -C $repo rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>$null)
-    if ($LASTEXITCODE -eq 0 -and $tracking.Count -gt 0 -and $tracking[0]) { $Branch = $tracking[0].Trim() -replace '^origin/', '' }
+    # 没有上游分支时 git 会往 stderr 写 fatal，这里靠退出码判断，不问它写了什么。
+    $tracking = Invoke-Captured 'git' @('-C', $repo, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}')
+    if ($tracking.Code -eq 0 -and $tracking.Output.Count -gt 0 -and $tracking.Output[0]) { $Branch = $tracking.Output[0].Trim() -replace '^origin/', '' }
     else { $Branch = 'main' }
 }
 
@@ -42,8 +45,9 @@ Write-Step ('从 GitHub 拉取最新代码（分支 ' + $Branch + '）')
 & git -C $repo fetch origin
 if ($LASTEXITCODE -ne 0) { Fail '拉取失败：连不上 GitHub，或者当前账号没有权限。程序仍然可以照常启动，只是没有更新。' }
 
-$changes = @(& git -C $repo log --oneline --no-decorate ('HEAD..origin/' + $Branch) 2>$null)
-if ($LASTEXITCODE -ne 0) { Fail ('远端没有 ' + $Branch + ' 这个分支。') }
+$log = Invoke-Captured 'git' @('-C', $repo, 'log', '--oneline', '--no-decorate', ('HEAD..origin/' + $Branch))
+if ($log.Code -ne 0) { Fail ('远端没有 ' + $Branch + ' 这个分支。') }
+$changes = @($log.Output)
 if ($changes.Count -eq 0) {
     Write-Note '已经是最新版本，不需要更新。'
     if (!$SkipStart) { Write-Step '启动良子小窗'; Start-Reader $arguments }
@@ -63,14 +67,23 @@ if (!$Force) {
     }
 }
 
-$before = @(& git -C $repo rev-parse HEAD)[0].Trim()
+# 记下更新前的提交号。回滚要用它，所以读不出来就地停下，别等编译失败才发现没得退。
+$head = Invoke-Captured 'git' @('-C', $repo, 'rev-parse', 'HEAD')
+if ($head.Code -ne 0 -or $head.Output.Count -eq 0) { Fail '读不出更新前的提交号，没有做任何改动。' }
+$before = $head.Output[0].Trim()
+
 Write-Step '切到最新代码'
 & git -C $repo reset --hard ('origin/' + $Branch)
 if ($LASTEXITCODE -ne 0) { Fail '切到最新代码失败，没有做任何改动。' }
 
 Write-Step '编译新版本'
 if (!(Invoke-Publish $repo $ReaderStagingDir)) {
-    & git -C $repo reset --hard $before | Out-Null
+    # 回滚也可能失败（比如本机有人改动过受版本管理的文件）。失败就照实说，不能报成
+    # 「已经退回去了」—— 用户据此判断要不要再点启动。
+    $rollback = Invoke-Captured 'git' @('-C', $repo, 'reset', '--hard', $before)
+    if ($rollback.Code -ne 0) {
+        Fail ('编译失败，而且代码没能自动退回去。请手动执行 git -C ' + $repo + ' reset --hard ' + $before + ' 再重试。现在跑的还是原来的程序，可以直接启动。')
+    }
     Fail '编译失败，代码已经退回更新前那一版。现在运行的还是原来的程序，可以直接启动。'
 }
 

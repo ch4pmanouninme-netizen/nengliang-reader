@@ -13,6 +13,11 @@
 param([Parameter(Mandatory)][string]$AppDirectory)
 $ErrorActionPreference = 'Stop'
 
+# 被测脚本一进来就把控制台切到 UTF-8，而本脚本默认按 ANSI 代码页写。两边共用同一个输出管道时，
+# CI 日志（和任何重定向到文件的情况）就是两种编码混在一起，谁读都是乱码 —— 测试的全部产出就是
+# 这些 PASS / FAIL 行，乱码等于没有证据。跟着切到 UTF-8。没有真实控制台时会抛，忽略即可。
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+
 $readerScripts = Join-Path (Split-Path -Parent $PSScriptRoot) 'scripts'
 $readerRoot = Join-Path ([IO.Path]::GetFullPath('artifacts')) ('Script Contract ' + [Guid]::NewGuid().ToString('N'))
 $readerCodeRoot = Join-Path $readerRoot 'Code Root'
@@ -40,6 +45,17 @@ function Invoke-ReaderScript($name, $arguments) {
     # 而这里 $ErrorActionPreference 是 Stop，会把子进程的正常报错当成测试脚本自己崩了。
     & $readerHost @command | Out-Host
     return $LASTEXITCODE
+}
+
+# 只用来搭本地裸仓库的脚手架。子进程的 stderr 一律不重定向：本脚本 EAP 是 Stop，
+# 一旦接住 stderr，git 的正常提示就会变成终止性错误，把测试自己打断。
+function Invoke-ReaderGit($arguments) {
+    & git @arguments | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw ("FAIL: git " + ($arguments -join ' ')) }
+}
+
+function Get-ReaderHead($repository) {
+    return @(& git -C $repository rev-parse HEAD)[0].Trim()
 }
 
 function Start-ReaderApp($dataDirectory) {
@@ -112,6 +128,44 @@ try {
     Assert-Reader (!(Test-ReaderLockHeld $readerData)) '第二次 stop 之后锁同样释放了'
 
     Assert-Reader ((Test-Path -LiteralPath $readerDefaultCodeRoot) -eq $readerDefaultExisted) '脚本没有碰开发机真实的代码目录'
+
+    # 编译失败必须把代码退回更新前那一版。这条以前是坏的：dotnet 把报错写在 stderr 上，
+    # 脚本接住输出时 PowerShell 5.1 会把它升级成终止性错误，整条更新链在编译那一步就地断掉，
+    # 回滚根本没跑到 —— 代码停在最新版、run\ 还是旧版，正是 README 保证不会出现的那种错开。
+    # 这里用本地裸仓库造一次必然失败的编译，断言退出码和代码位置都对得上。
+    Assert-Reader ([bool](Get-Command git -ErrorAction SilentlyContinue)) 'git 在 PATH 上，可以验编译回滚'
+    $updateRoot = Join-Path $readerRoot 'Update Root'
+    $updateOrigin = Join-Path $updateRoot 'origin.git'
+    $updateClone = Join-Path $updateRoot 'Clone'
+    $updateCodeRoot = Join-Path $readerRoot 'Update Code Root'
+    New-Item -ItemType Directory -Path $updateRoot -Force | Out-Null
+
+    Invoke-ReaderGit @('init', '--bare', '--quiet', $updateOrigin)
+    Invoke-ReaderGit @('-C', $updateOrigin, 'symbolic-ref', 'HEAD', 'refs/heads/main')
+    Invoke-ReaderGit @('clone', '--quiet', $updateOrigin, $updateClone)
+    Invoke-ReaderGit @('-C', $updateClone, 'config', 'user.email', 'script-contract@example.invalid')
+    Invoke-ReaderGit @('-C', $updateClone, 'config', 'user.name', 'Script Contract')
+
+    # 第一版指向真实存在的 SDK，第二版故意指向一个不存在的 —— 这样失败一定来自编译本身，
+    # 而不是「工程文件找不到」那条提前返回，回滚路径才真的被走到。两版都不需要联网 restore。
+    $updateProject = Join-Path $updateClone 'src\Reader.Desktop\Reader.Desktop.csproj'
+    New-Item -ItemType Directory -Path (Split-Path -Parent $updateProject) -Force | Out-Null
+    Set-Content -LiteralPath $updateProject -Value '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>'
+    Invoke-ReaderGit @('-C', $updateClone, 'add', '-A')
+    Invoke-ReaderGit @('-C', $updateClone, 'commit', '--quiet', '-m', 'initial')
+    $updateBefore = Get-ReaderHead $updateClone
+
+    Set-Content -LiteralPath $updateProject -Value '<Project Sdk="NengliangReader.Broken.Sdk"></Project>'
+    Invoke-ReaderGit @('-C', $updateClone, 'add', '-A')
+    Invoke-ReaderGit @('-C', $updateClone, 'commit', '--quiet', '-m', 'break the build')
+    Invoke-ReaderGit @('-C', $updateClone, 'push', '--quiet', 'origin', 'main')
+    # 把工作区退回第一版：于是 update 会走一遍完整的「有更新可拉 → 编译 → 失败 → 回滚」。
+    Invoke-ReaderGit @('-C', $updateClone, 'reset', '--hard', '--quiet', $updateBefore)
+
+    $updateExit = Invoke-ReaderScript 'update.ps1' @('-RepoRoot', $updateClone, '-CodeRoot', $updateCodeRoot, '-Branch', 'main', '-SkipStart')
+    Assert-Reader ($updateExit -eq 1) '编译失败时 update 报失败'
+    Assert-Reader ((Get-ReaderHead $updateClone) -eq $updateBefore) '编译失败后代码退回更新前那一版'
+    Assert-Reader (!(Test-Path -LiteralPath (Join-Path $updateCodeRoot 'run'))) '编译失败没有留下半个 run 目录'
     $readerPassed = $true
 } finally {
     foreach ($child in $readerChildren) {
