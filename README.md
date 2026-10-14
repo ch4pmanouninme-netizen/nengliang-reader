@@ -2,7 +2,7 @@
 
 适用于 Windows 和 macOS 的悬浮阅读与局域网加密聊天工具。基于上游 v1.5.2 迁移，保留 TXT / EPUB、进度保存、全局快捷键，并提供链接下载与跨平台书库备份。
 
-**当前版本：2.2.2。** 基于上游 v1.5.2 迁移，原始源码保留在 [`legacy/v1.5.2/`](legacy/v1.5.2/)。Windows 与 macOS 自动构建和回归检查已通过；Mac 实机交互、签名与公证尚未完成，具体限制见下方平台验证状态。
+**当前版本：2.3.0。** 基于上游 v1.5.2 迁移，原始源码保留在 [`legacy/v1.5.2/`](legacy/v1.5.2/)。Windows 与 macOS 自动构建和回归检查已通过；Mac 实机交互、签名与公证尚未完成，具体限制见下方平台验证状态。
 
 [发行版本](https://github.com/ch4pmanouninme-netizen/nengliang-reader/releases) · [提交问题](https://github.com/ch4pmanouninme-netizen/nengliang-reader/issues) · [更新日志](CHANGELOG.md) · [构建与发布](docs/RELEASE.md)
 
@@ -13,6 +13,7 @@ v2.2.0 新增： VS Code 的 19 个与 JetBrains 的 8 个官方内置主题，�
 - **统一主页**：阅读和聊天独立开关，关闭主页收进托盘，明确退出才关闭客户端。
 - **加密聊天**：兼容上游 v1.5 协议，TLS 1.2、SHA-256 指纹校验、限流、有界缓存、自动重连。
 - **独立服务**：Windows/macOS 均能启动聊天服务，客户端退出不影响独立服务。
+- **本机部署**：仓库 `scripts/` 在桌面生成「启动 / 停止 / 更新」三个入口，代码固定装在本机一处，更新只需拉代码重启；详见 [团队内部部署](scripts/README.md)。
 
 - **本地阅读**：TXT（UTF-8、UTF-16、GBK/GB18030）和 EPUB 纯文本导入，支持拖放。
 - **书库管理**：右键书籍删除、置顶/取消置顶、新建或选择分组；左侧下拉框筛选全部书籍、未分组或指定分组。置顶与分组随进度保存并进入书库备份，详见 [书库管理](docs/BOOK-LIBRARY.md)。
@@ -51,7 +52,7 @@ Mac 在 Spaces、全屏应用、睡眠唤醒及不同键盘布局下的行为需
 
 ## 下载与使用
 
-在 [Releases](https://github.com/ch4pmanouninme-netizen/nengliang-reader/releases) 中选择对应平台。选择 v2.2.2 的平台安装包；Source code 为源码归档。
+在 [Releases](https://github.com/ch4pmanouninme-netizen/nengliang-reader/releases) 中选择对应平台。选择 v2.3.0 的平台安装包；Source code 为源码归档。
 
 - Windows：完整解压 `NengliangReader-win-x64.zip`，运行根目录的 `良子小窗.exe`。根目录仅含 EXE、`README.md` 和 `app/`；请保留 `app/` 与 EXE 的相对位置，可为 EXE 创建桌面快捷方式。旧版发行包的入口仍为 `NengliangReader.exe`。
 - Mac：根据芯片选择 `osx-arm64` 或 `osx-x64`，打开 DMG，将应用复制到“应用程序”。带 `unsigned` 的文件尚未完成 Developer ID 签名与 Apple 公证，系统可能阻止打开；请勿关闭系统安全保护。

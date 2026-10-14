@@ -78,4 +78,5 @@ jobs:
           cd packages
           sha256sum *.zip *.dmg > SHA256SUMS.txt
           printf '%s\n' 'Windows/macOS 跨平台版本。macOS 包尚未完成 Developer ID 签名、公证及实机交互验收；请在发行说明中明确这些限制。' > notes.md
+          printf '%s\n' "完整变更见仓库 CHANGELOG.md 的 $version 一节。" >> notes.md
           gh release create "$RELEASE_TAG" *.zip *.dmg SHA256SUMS.txt --target "$TARGET_SHA" --draft --title "$RELEASE_TAG" --notes-file notes.md
