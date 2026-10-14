@@ -320,6 +320,9 @@ internal sealed partial class MainWindow : Window
         catch (Exception ex) { status.Text = "保存失败，当前进度仍在内存中：" + ex.Message; dirty = true; return false; }
     }
 
+    // Mirrors the guard at the top of ExitAsync so the control channel can refuse a stop request
+    // with "busy" instead of promising an exit that will not happen.
+    public bool CanExit => !busy && !dialogOpen && reader?.IsPrompting != true;
     public void RequestExit() => _ = ExitAsync();
     private async Task CloseModule()
     {

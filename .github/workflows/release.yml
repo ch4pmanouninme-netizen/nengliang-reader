@@ -34,6 +34,7 @@ jobs:
       - run: dotnet build NengliangReader.sln -c Release
       - run: dotnet run --project tests/Reader.Core.Tests -c Release --no-build
       - run: dotnet run --project tests/Reader.Chat.Tests -c Release --no-build
+      - run: dotnet run --project tests/Reader.Theme.Tests -c Release --no-build
       - if: runner.os == 'Windows'
         shell: pwsh
         run: |

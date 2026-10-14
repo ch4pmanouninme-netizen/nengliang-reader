@@ -13,6 +13,8 @@ public sealed class App : Application
 {
     private FileStream? instance;
     private TrayIcon? tray;
+    private MainWindow? library;
+    private CancellationTokenSource? control;
     internal FluentTheme Fluent { get; } = new();
     public override void Initialize() => Styles.Add(Fluent);
     public override void OnFrameworkInitializationCompleted()
@@ -34,10 +36,25 @@ public sealed class App : Application
             {
                 string root = Program.DataDirectory ?? DataPaths.Default;
                 Directory.CreateDirectory(root);
-                instance = new FileStream(Path.Combine(root, "instance.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-                if (Program.DataDirectory == null) DataPaths.MigrateLegacy(Path.Combine(AppContext.BaseDirectory, "data"), root);
+                try
+                {
+                    instance = new FileStream(Path.Combine(root, "instance.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                }
+                catch (IOException)
+                {
+                    // Another copy is holding the lock. Closing the window only hides it to the tray,
+                    // so the lock outlives the close and the raw IOException reads as a broken install.
+                    var busy = new Window { Title = "良子小窗已经在运行", Width = 520, Height = 220,
+                        Content = new TextBlock { Margin = new Thickness(24), TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                            Text = "良子小窗已经在运行，不需要重复打开。\n\n如果窗口不见了，请查看屏幕右下角托盘里的良子小窗图标。想彻底退出（或重新打开），在该图标上点右键，选择「退出」。" } };
+                    busy.Closed += (_, _) => desktop.Shutdown(1);
+                    desktop.MainWindow = busy;
+                    base.OnFrameworkInitializationCompleted();
+                    return;
+                }
+                if (Program.DataDirectory == null) DataPaths.MigrateLegacy(DataPaths.ResolveLegacyRoot(Program.LegacyRoot, AppContext.BaseDirectory), root);
                 var store = new Store(root);
-                var library = new MainWindow(store);
+                library = new MainWindow(store);
                 var home = new HomeWindow(store, library);
                 if (Program.SmokeTest) library.SmokeHome = home;
                 desktop.MainWindow = Program.SmokeTest ? library : home;
@@ -49,7 +66,9 @@ public sealed class App : Application
                 tray.Clicked += (_, _) => home.Restore();
                 TrayIcon.SetIcons(this, new TrayIcons { tray });
                 library.StartIntegration();
-                desktop.Exit += (_, _) => { home.DisposeModules(); tray.Dispose(); instance.Dispose(); };
+                control = new CancellationTokenSource();
+                _ = ControlChannel.ServeAsync(root, HandleControl, control.Token);
+                desktop.Exit += (_, _) => { control?.Cancel(); control?.Dispose(); library = null; home.DisposeModules(); tray.Dispose(); instance.Dispose(); };
             }
             catch (Exception ex)
             {
@@ -61,6 +80,18 @@ public sealed class App : Application
             }
         }
         base.OnFrameworkInitializationCompleted();
+    }
+
+    // Runs on a worker thread. Posting rather than awaiting the UI thread matters: the caller is
+    // a launcher script with a timeout, and blocking the pipe on a UI round trip turns a slow
+    // save into an unanswered stop request. ExitAsync re-checks the same guard, so a race here
+    // can only cost us a "busy" answer we did not need to give.
+    private Task<string> HandleControl(CancellationToken cancellation)
+    {
+        MainWindow? target = library;
+        if (target == null || !target.CanExit) return Task.FromResult(ControlChannel.Refused);
+        Dispatcher.UIThread.Post(target.RequestExit);
+        return Task.FromResult(ControlChannel.Accepted);
     }
 
     private static void Add(NativeMenu menu, string label, Action action)

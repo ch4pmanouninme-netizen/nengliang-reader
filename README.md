@@ -159,6 +159,18 @@ dotnet run --project src/Reader.Desktop -c Release --no-build
 dotnet run --project src/Reader.Desktop -- --data ./artifacts/test-library
 ```
 
+### 脚本入口（团队内部部署）
+
+同事机器上不必每版都分发压缩包。克隆一次代码，双击 `scripts\install.bat` 在桌面生成
+「启动 / 停止 / 更新」三个图标，之后点图标就行：**启动不联网**，更新才拉代码并编译。
+
+代码装在 `%LOCALAPPDATA%\NengliangReaderCode\`，其中 `run\` 路径永久固定 —— Windows 防火墙的
+入站规则按进程映像的完整路径匹配，路径不变，规则建一次就长期有效。书库数据仍在
+`%LOCALAPPDATA%\NengliangReader\`，两边分开。每台机器需要 .NET SDK 10 和 Git。
+
+失败不会破坏正在用的版本：拉取失败就地停下，编译失败把代码退回更新前那一版。前置条件、
+回退方式和已知边界见 [scripts/README.md](scripts/README.md)。
+
 ## 测试与打包
 
 ```sh
@@ -180,6 +192,7 @@ src/Reader.Platform.Windows/   Windows 热键和鼠标穿透
 src/Reader.Platform.Mac/       macOS 热键和鼠标穿透
 tests/Reader.Core.Tests/       跨平台回归测试
 tests/Reader.Chat.Tests/       TLS、协议边界与上游互通测试
+scripts/                       启动 / 停止 / 更新脚本（团队内部部署）
 build/                        安装包与签名脚本
 docs/                         实施范围、验证与发布说明
 legacy/                       历史 Windows Forms 源码，含 v1.5.2 快照

@@ -39,3 +39,8 @@ try {
     $readerChild.Dispose()
 }
 Write-Host "Package layout, Unicode paths, relative arguments, desktop/chat smoke and --server passed. Evidence: $readerTestRoot"
+
+# 上面验的是打包产物本身，这里接着验团队部署用的启动 / 停止脚本 —— 它把这份产物复制到自己的
+# 临时代码目录里再跑一遍，所以顺带证明了「脚本装的这一份」也能起来、也能被优雅停掉。
+& (Join-Path $PSScriptRoot 'Test-ReaderScripts.ps1') -AppDirectory (Join-Path $readerUnpacked 'app')
+Write-Host "Start/stop script contract passed. Evidence: $readerTestRoot"

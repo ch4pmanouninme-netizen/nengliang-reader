@@ -11,6 +11,27 @@ try
     Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
     if (LegacyTests.Run([Path.Combine(root, "legacy")]) != 0) return 1;
     await Downloads();
+    // A library of its own, so the derived pipe name cannot collide with an installed copy of the
+    // reader running on the same machine.
+    string controlRoot = Path.Combine(root, "control");
+    using (var control = new CancellationTokenSource())
+    {
+        var listening = new TaskCompletionSource();
+        int served = 0;
+        _ = ControlChannel.ServeAsync(controlRoot, _ => { served++; return Task.FromResult(served == 1 ? ControlChannel.Accepted : ControlChannel.Refused); }, control.Token, () => listening.TrySetResult());
+        await listening.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Check(await ControlChannel.TrySendAsync(controlRoot, ControlChannel.ShutdownCommand, TimeSpan.FromSeconds(10)) == ControlChannel.Accepted, "control channel reports a stopped copy");
+        Check(await ControlChannel.TrySendAsync(controlRoot, ControlChannel.ShutdownCommand, TimeSpan.FromSeconds(10)) == ControlChannel.Refused, "control channel carries a refusal back to the caller");
+        Check(served == 2, "control channel serves repeated requests");
+        control.Cancel();
+    }
+    Check(await ControlChannel.TrySendAsync(controlRoot, ControlChannel.ShutdownCommand, TimeSpan.FromSeconds(2)) == null, "control channel reports silence once the server is gone");
+    // A copy too old to serve the channel still holds the lock. That is the only way the launcher
+    // can tell "nothing is running" apart from "something is running but will not answer".
+    Directory.CreateDirectory(controlRoot);
+    Check(!ControlChannel.LockHeld(controlRoot), "an unlocked library is reported as free");
+    using (var held = new FileStream(Path.Combine(controlRoot, "instance.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+        Check(ControlChannel.LockHeld(controlRoot), "a held library is reported as busy");
     var original = new Store(Path.Combine(root, "original"));
     var book = original.Add("跨平台测试", "第一段😊\n第二段内容", "TXT");
     book.Position = 3; book.Bookmark = 6;
@@ -43,6 +64,23 @@ try
     DataPaths.MigrateLegacy(brokenPrimary, migratedRecovery);
     var recovery = new Store(migratedRecovery);
     Check(recovery.Books[0].Title == "恢复书籍" && recovery.Books[0].Position == 3, "legacy migration retains recoverable backup progress");
+    string elsewhere = Path.Combine(root, "elsewhere");
+    string packagedLegacy = Path.Combine(root, "legacy-pack");
+    Directory.CreateDirectory(Path.Combine(packagedLegacy, "data"));
+    File.WriteAllText(Path.Combine(packagedLegacy, "data", "state.xml"), "<preferences/>");
+    string resolvedPackage = DataPaths.ResolveLegacyRoot(packagedLegacy, elsewhere);
+    Check(resolvedPackage == Path.Combine(packagedLegacy, "data"), "entry shell resolves the packaged data directory");
+    string fromPackage = Path.Combine(root, "migrated-from-package");
+    DataPaths.MigrateLegacy(resolvedPackage, fromPackage);
+    Check(File.Exists(Path.Combine(fromPackage, "state.xml")) && File.Exists(Path.Combine(fromPackage, "state.legacy-backup.xml")), "entry shell legacy root migrates the packaged library");
+    string flatLegacy = Path.Combine(root, "legacy-flat");
+    Directory.CreateDirectory(flatLegacy);
+    File.WriteAllText(Path.Combine(flatLegacy, "state.xml"), "<preferences/>");
+    Check(DataPaths.ResolveLegacyRoot(flatLegacy, elsewhere) == flatLegacy, "legacy root resolves a flat data directory");
+    string emptyLegacy = Path.Combine(root, "legacy-empty");
+    Directory.CreateDirectory(emptyLegacy);
+    Check(DataPaths.ResolveLegacyRoot(emptyLegacy, elsewhere) == emptyLegacy, "absent legacy library falls back to the given root");
+    Check(DataPaths.ResolveLegacyRoot(null, packagedLegacy) == Path.Combine(packagedLegacy, "data"), "unspecified legacy root still inspects the assembly directory");
     string incomplete = Path.Combine(root, "incomplete.zip");
     using (var zip = ZipFile.Open(incomplete, ZipArchiveMode.Create)) zip.CreateEntryFromFile(Path.Combine(original.Root, "state.xml"), "state.xml");
     int beforeCount = destination.Books.Count;
