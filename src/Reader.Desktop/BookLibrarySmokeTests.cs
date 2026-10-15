@@ -74,7 +74,74 @@ internal sealed partial class MainWindow
         menu = await RowMenu(target); menu.Close();
         Click(Item(menu, "GroupBook").Items.OfType<MenuItem>().Single(item => item.Tag is string group && group == ""));
         await Wait(() => !busy && target.Group == "");
-        Check(groupFilter.Items.OfType<GroupChoice>().All(choice => choice.Group != "测试分组"), "moving the last book out removes an unused group");
+        // 分组现在是独立实体：把最后一本书移走，它作为空分组留下来。
+        Check(groupFilter.Items.OfType<GroupChoice>().Any(choice => choice.Group == "测试分组"), "an emptied group survives as an empty group");
+        Check(store.GetBooks("测试分组").Length == 0, "the emptied group holds no books");
+
+        // 多选是为了批量操作，但不能把正在阅读的书换掉。
+        var batchA = store.Add("批量甲", "批量操作的甲。", "TXT");
+        var batchB = store.Add("批量乙", "批量操作的乙。", "TXT");
+        busy = true; RefreshBooks(active.Id, true); busy = false; await SelectBook(active);
+        books.SelectedItems.Add(batchA); books.SelectedItems.Add(batchB);
+        await Task.Delay(150);
+        Check(books.SelectedItems.Count == 3 && session?.Book == active, "selecting several books leaves the reading session on the current book");
+        menu = await RowMenu(batchA); menu.Close();
+        Check(menu.Items.OfType<MenuItem>().Any(item => item.Name == "BatchScope"), "the row menu announces that the action covers the whole selection");
+        Click(Item(menu, "GroupBook").Items.OfType<MenuItem>().Single(item => item.Name == "NewBookGroup"));
+        await Wait(() => appLifetime.Windows.Any(window => window.Title == "新建分组"));
+        var batchDialog = appLifetime.Windows.Single(window => window.Title == "新建分组");
+        batchDialog.GetVisualDescendants().OfType<TextBox>().Single().Text = "批量组";
+        batchDialog.GetVisualDescendants().OfType<Button>().Single(button => button.Content?.ToString() == "确定").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Wait(() => !busy && !dialogOpen && batchA.Group == "批量组" && batchB.Group == "批量组");
+        Check(active.Group == "批量组", "batch grouping covers every selected book");
+
+        // 分组管理窗口：重名拒绝、空分组、重命名、排序、删除后书回未分组。
+        var managed = store.Add("受管理书", "分组管理窗口的测试书。", "TXT");
+        await store.SetGroupAsync(managed, "受管理组");
+        busy = true; RefreshBooks(active.Id, true); busy = false;
+        _ = ManageGroups();
+        await Wait(() => appLifetime.Windows.Any(window => window.Name == "GroupDialog"));
+        var groupUi = appLifetime.Windows.Single(window => window.Name == "GroupDialog");
+        Button GroupButton(string name) => groupUi.GetVisualDescendants().OfType<Button>().Single(button => button.Name == name);
+        TextBox nameInput = groupUi.GetVisualDescendants().OfType<TextBox>().Single(box => box.Name == "GroupNameInput");
+        ListBox groupList = groupUi.GetVisualDescendants().OfType<ListBox>().Single(box => box.Name == "GroupList");
+        TextBlock groupMessage = groupUi.GetVisualDescendants().OfType<TextBlock>().Single(block => block.Name == "GroupMessage");
+        // store 先变、窗口后刷，直接等 store 会在刷新之前返回，随后的选择就被迟到的 Refresh 复位。
+        // ItemsSource 每次刷新都换新实例，拿它当“这次操作已经落到界面上”的确定信号。
+        async Task Operate(string button)
+        {
+            object? before = groupList.ItemsSource;
+            GroupButton(button).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await Wait(() => !ReferenceEquals(groupList.ItemsSource, before));
+        }
+
+        nameInput.Text = "受管理组";
+        GroupButton("CreateGroup").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Wait(() => groupMessage.Text?.Contains("已存在") == true);
+        Check(store.GroupNames.Count(name => name == "受管理组") == 1, "the window refuses a duplicate group name and says why");
+
+        nameInput.Text = "空管理组";
+        await Operate("CreateGroup");
+        Check(store.GetBooks("空管理组").Length == 0, "the window creates an empty group");
+
+        groupList.SelectedIndex = Array.IndexOf(store.GroupNames, "受管理组");
+        await Task.Delay(80);
+        nameInput.Text = "改名后的组";
+        await Operate("RenameGroup");
+        Check(store.GroupNames.Contains("改名后的组") && managed.Group == "改名后的组", "renaming in the window carries its books along");
+
+        string[] beforeMove = store.GroupNames;
+        int at = Array.IndexOf(beforeMove, "改名后的组");
+        Check(at > 0, "the renamed group is not already first");
+        await Operate("MoveGroupUp");
+        Check(store.GroupNames[at - 1] == "改名后的组" && store.GroupNames[at] == beforeMove[at - 1], "the window swaps a group with its neighbour");
+
+        await Operate("DeleteGroup");
+        Check(!store.GroupNames.Contains("改名后的组") && managed.Group == "" && store.Books.Contains(managed), "deleting a group in the window moves its books back to ungrouped without deleting them");
+
+        GroupButton("CloseGroupDialog").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Wait(() => !dialogOpen && appLifetime.Windows.All(window => window.Name != "GroupDialog"));
+        Check(groupFilter.Items.OfType<GroupChoice>().Any(choice => choice.Group == "空管理组"), "the shelf filter picks up groups created in the window");
 
         busy = true; RefreshBooks(active.Id, true); busy = false; await SelectBook(active);
         menu = await RowMenu(target); menu.Close(); Click(Item(menu, "DeleteBook")); await AnswerDelete(false);

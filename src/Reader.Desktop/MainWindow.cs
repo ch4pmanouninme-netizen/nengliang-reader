@@ -14,7 +14,8 @@ namespace Reader.Desktop;
 internal sealed partial class MainWindow : Window
 {
     private readonly Store store;
-    private readonly ListBox books = new() { MinWidth = 160 };
+    // 多选是为了批量操作；「正在阅读的书」仍由 SelectedBooks 恰好 1 本时决定。
+    private readonly ListBox books = new() { MinWidth = 160, SelectionMode = SelectionMode.Multiple };
     private readonly TextBlock description = new() { Text = "打开 TXT / EPUB，或将文件拖到窗口。", TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
     private readonly ProgressBar progress = new() { Minimum = 0, Maximum = 100, Height = 6 };
@@ -66,14 +67,22 @@ internal sealed partial class MainWindow : Window
         DockPanel.SetDock(bottom, Dock.Bottom); root.Children.Add(bottom);
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("190,20,*") };
         var shelf = new DockPanel { LastChildFill = true };
-        groupFilter.Margin = new Thickness(0, 0, 0, 8); DockPanel.SetDock(groupFilter, Dock.Top);
-        shelf.Children.Add(groupFilter); shelf.Children.Add(books);
+        var filterRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 8) };
+        filterRow.Children.Add(groupFilter);
+        var manageGroups = new Button { Name = "ManageGroups", Content = "管理分组", Margin = new Thickness(8, 0, 0, 0) };
+        manageGroups.Click += async (_, _) => await ManageGroups();
+        Grid.SetColumn(manageGroups, 1); filterRow.Children.Add(manageGroups);
+        DockPanel.SetDock(filterRow, Dock.Top);
+        shelf.Children.Add(filterRow); shelf.Children.Add(books);
         grid.Children.Add(shelf); Grid.SetColumn(description, 2); grid.Children.Add(description); root.Children.Add(grid);
         ConfigureBookLibrary();
         Content = root;
         books.SelectionChanged += async (_, _) =>
         {
-            if (!busy && !refreshingBooks && books.SelectedItem is Book book && session?.Book != book) await SelectBook(book);
+            // 「正在阅读的书」与「选中的书」是两回事：多选是为了批量操作。
+            // 只有恰好选中一本时才切换正文，否则 Ctrl 点选会一本本地把正文换过去。
+            if (busy || refreshingBooks || SelectedBooks.Length != 1) return;
+            if (SelectedBooks[0] is Book book && session?.Book != book) await SelectBook(book);
         };
         DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragOverEvent, (_, e) => e.DragEffects = !busy && e.DataTransfer.Contains(DataFormat.File) ? DragDropEffects.Copy : DragDropEffects.None);
