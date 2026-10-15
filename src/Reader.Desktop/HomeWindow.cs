@@ -20,7 +20,7 @@ internal sealed class HomeWindow : Window
     public HomeWindow(Store store, MainWindow library)
     {
         this.store = store; this.library = library;
-        Title = "良子小窗"; Width = 480; Height = 360; MinWidth = 420; MinHeight = 300;
+        Title = "良子小窗"; Width = 480; MinWidth = 420; SizeToContent = SizeToContent.Height; CanResize = false;
         var panel = new StackPanel { Margin = new Thickness(30), Spacing = 14 };
         panel.Children.Add(UiThemes.Header(BuildHeader()));
         panel.Children.Add(new TextBlock { Text = "阅读与加密聊天，各自打开，随时回到主页。", TextWrapping = TextWrapping.Wrap });
