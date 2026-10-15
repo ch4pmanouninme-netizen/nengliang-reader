@@ -19,7 +19,9 @@ public static class LibraryArchive
             long size = new FileInfo(file).Length;
             if (size > FileLimit || (total += size) > ArchiveLimit) throw new InvalidDataException("书库超过备份容量上限（单文件 64 MB，总计 256 MB）。");
         }
+        
         string temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        
         try
         {
             using (var zip = ZipFile.Open(temporary, ZipArchiveMode.Create))
