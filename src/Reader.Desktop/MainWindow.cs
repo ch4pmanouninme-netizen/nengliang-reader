@@ -17,8 +17,8 @@ internal sealed partial class MainWindow : Window
     private readonly ListBox books = new() { MinWidth = 160 };
     private readonly TextBlock description = new() { Text = "打开 TXT / EPUB，或将文件拖到窗口。", TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly TextBlock shortcuts = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12 };
     private readonly ProgressBar progress = new() { Minimum = 0, Maximum = 100, Height = 6 };
+    private readonly TextBlock progressLabel = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
     private readonly WrapPanel actions = new() { Orientation = Orientation.Horizontal };
     private readonly Button cancel = new() { Content = "取消下载", IsVisible = false };
     private readonly DispatcherTimer saveTimer = new() { Interval = TimeSpan.FromSeconds(2) };
@@ -49,16 +49,20 @@ internal sealed partial class MainWindow : Window
         header.Children.Add(new TextBlock { Text = "把故事放在手边。TXT · EPUB · 悬浮阅读", Foreground = Brushes.Gray });
         DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
         ButtonAction("主页", () => ShowHome?.Invoke());
-        ButtonAction("打开", () => _ = ImportDialog()); ButtonAction("链接下载", () => _ = DownloadDialog());
+        // 动作入口统一走 ButtonAction，包括带下拉的「书库备份」，保证一排按钮样式一致。
+        ButtonAction("导入", () => _ = ImportDialog()); ButtonAction("链接下载", () => _ = DownloadDialog());
         ButtonAction("显示", ShowReader); ButtonAction("设置", () => _ = Settings());
         ButtonAction("快捷键", () => _ = EditHotkeys());
-        var dataMenu = new MenuItem { Header = "书库备份" };
+        var backup = new MenuFlyout();
         var export = new MenuItem { Header = "导出书库" }; export.Click += async (_, _) => await Archive(false);
         var importBackup = new MenuItem { Header = "导入书库" }; importBackup.Click += async (_, _) => await Archive(true);
-        dataMenu.Items.Add(export); dataMenu.Items.Add(importBackup);
-        var backupMenu = new Menu(); backupMenu.Items.Add(dataMenu); actions.Children.Add(backupMenu);
+        backup.Items.Add(export); backup.Items.Add(importBackup);
+        ButtonAction("书库备份").Flyout = backup;
         cancel.Click += (_, _) => downloadCancellation?.Cancel();
-        var bottom = new StackPanel { Spacing = 10, Margin = new Thickness(0, 16, 0, 0), Children = { actions, cancel, progress, status, shortcuts } };
+        var progressRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        Grid.SetColumn(progress, 0); progressRow.Children.Add(progress);
+        Grid.SetColumn(progressLabel, 1); progressRow.Children.Add(progressLabel);
+        var bottom = new StackPanel { Spacing = 10, Margin = new Thickness(0, 16, 0, 0), Children = { actions, cancel, progressRow, status } };
         DockPanel.SetDock(bottom, Dock.Bottom); root.Children.Add(bottom);
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("190,20,*") };
         var shelf = new DockPanel { LastChildFill = true };
@@ -95,17 +99,21 @@ internal sealed partial class MainWindow : Window
         };
     }
 
-    private void ButtonAction(string label, Action action)
+    // 返回按钮，便于给「书库备份」挂下拉菜单，而不必另起一套样式。
+    private Button ButtonAction(string label, Action? action = null)
     {
-        var button = new Button { Content = label, Margin = new Thickness(0, 0, 8, 8) }; button.Click += (_, _) => action(); actions.Children.Add(button);
+        var button = new Button { Content = label, Margin = new Thickness(0, 0, 8, 8) };
+        if (action != null) button.Click += (_, _) => action();
+        actions.Children.Add(button);
+        return button;
     }
 
     public void StartIntegration()
     {
         if (Program.SmokeTest || integrationStarted) return;
         integrationStarted = true;
-        try { hotkeys = new Hotkeys(store.Root, HandleHotkey); shortcuts.Text = hotkeys.Caption; }
-        catch (Exception ex) { shortcuts.Text = "全局快捷键不可用；可通过托盘 / 菜单栏操作。"; status.Text = ex.Message; }
+        try { hotkeys = new Hotkeys(store.Root, HandleHotkey); }
+        catch (Exception ex) { status.Text = ex.Message; }
     }
 
     private void HandleHotkey(int id)
@@ -137,7 +145,14 @@ internal sealed partial class MainWindow : Window
         if (session == null) return;
         description.Text = session.Book.Title + "\n" + session.Book.Format + " · " + session.Percent + "%\n\n" +
             session.Text.Substring(session.Position, Math.Min(250, session.Text.Length - session.Position));
-        progress.Value = session.Percent;
+        ShowReadingProgress();
+    }
+
+    // 同一根进度条兼作阅读进度与下载进度，文案必须说清当前是哪一种。
+    private void ShowReadingProgress()
+    {
+        progress.Value = session?.Percent ?? 0;
+        progressLabel.Text = session == null ? "" : $"阅读 {session.Percent}%";
     }
 
     private async Task ImportDialog()
@@ -191,6 +206,7 @@ internal sealed partial class MainWindow : Window
             {
                 status.Text = $"已下载 {p.Bytes / 1024.0:N0} KB" + (p.Total.HasValue ? $" / {p.Total / 1024.0:N0} KB" : "");
                 progress.IsIndeterminate = !p.Total.HasValue;
+                progressLabel.Text = p.Total > 0 ? $"下载 {100.0 * p.Bytes / p.Total.Value:0}%" : "下载中 …";
                 if (p.Total > 0) progress.Value = 100.0 * p.Bytes / p.Total.Value;
             });
             try
@@ -200,7 +216,8 @@ internal sealed partial class MainWindow : Window
                 selected = book.Id; MarkDirty(); status.Text = "下载完成，已加入书架。";
             }
             catch (OperationCanceledException) { status.Text = "下载已取消。"; }
-            finally { downloadCancellation = null; cancel.IsVisible = false; progress.IsIndeterminate = false; }
+            // 下载结束后把进度条和文案交还阅读进度，取消下载时不会留在“下载 xx%”。
+            finally { downloadCancellation = null; cancel.IsVisible = false; progress.IsIndeterminate = false; ShowReadingProgress(); }
         });
         if (selected != null) RefreshBooks(selected, true);
         Save();
@@ -294,12 +311,26 @@ internal sealed partial class MainWindow : Window
 
     private async Task EditHotkeys()
     {
-        if (busy || dialogOpen || hotkeys == null) return;
+        // 热键不可用时要说出来：静默返回会让「快捷键」按钮看起来只是没反应。
+        if (hotkeys == null) { status.Text = "全局快捷键不可用；可通过托盘 / 菜单栏操作。"; return; }
+        if (busy || dialogOpen) return;
         dialogOpen = true;
         try
         {
-            string? value = await Dialogs.Prompt(this, "全局快捷键", "依次输入：隐藏、下一页、上一页、穿透、自动阅读。以逗号分隔。支持 A–Z、F1–F12、Left、Right、Space；固定搭配 Ctrl+Alt（Mac 为 Control+Option）。", string.Join(",", hotkeys.Keys));
-            if (value != null) { hotkeys.Configure(value.Split(',').Select(key => key.Trim()).ToArray()); shortcuts.Text = hotkeys.Caption; }
+            // 录入要读原始按键，而全局热键是系统级注册、会抢先收到，先停掉再开窗口。
+            hotkeys.Suspend();
+            string[]? chosen = null;
+            try
+            {
+                // 注册失败的功能在窗口里就地标注，这是它唯一的显示位置。
+                var window = new HotkeyWindow(hotkeys.Keys, hotkeys.FailedRows);
+                if (await window.ShowDialog<bool>(this)) chosen = window.Result;
+            }
+            finally
+            {
+                try { if (chosen != null) hotkeys.Configure(chosen); else hotkeys.Resume(); }
+                catch (Exception ex) { status.Text = ex.Message; hotkeys.Resume(); }
+            }
         }
         catch (Exception ex) { status.Text = ex.Message; }
         finally { dialogOpen = false; }
@@ -365,6 +396,7 @@ internal sealed partial class MainWindow : Window
             await RunBookLibrarySmoke();
             busy = true; RefreshBooks(book.Id, true); busy = false;
             await SelectBook(book);
+            if (progressLabel.Text != $"阅读 {session!.Percent}%") throw new InvalidOperationException("进度条文案：" + progressLabel.Text);
             await Task.Delay(150);
             Capture(this, "library.png");
             ShowReader();

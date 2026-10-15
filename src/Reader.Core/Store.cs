@@ -84,6 +84,7 @@ namespace Reader.Core;
                 Pref.ReadingThemeId = (string)p.Attribute("readingThemeId") ?? "";
                 Pref.ChatNick = (string)p.Attribute("chatNick") ?? "";
                 Pref.ChatPort = Clamp(Number(p, "chatPort", 38417), 1, 65535);
+                Pref.ExitMode = Clamp(Number(p, "exitMode", Preferences.ExitUnset), Preferences.ExitUnset, Preferences.ExitProgram);
             }
             Books.Clear(); Books.AddRange(loaded);
             LastId = (string)root.Attribute("last") ?? "";
@@ -134,7 +135,7 @@ namespace Reader.Core;
                 new XElement("preferences", new XAttribute("width", Pref.Width), new XAttribute("x", Pref.X), new XAttribute("y", Pref.Y), new XAttribute("hasPosition", Pref.HasPosition),
                     new XAttribute("seconds", Pref.Seconds), new XAttribute("lineCount", Pref.LineCount), new XAttribute("opacity", Pref.Opacity), new XAttribute("theme", Pref.Theme),
                     new XAttribute("fontSize", (int)Pref.FontSize), new XAttribute("fontName", Pref.FontName), new XAttribute("topMost", Pref.TopMost ? "true" : "false"),
-                    new XAttribute("chatHost", Pref.ChatHost), new XAttribute("chatNick", Pref.ChatNick), new XAttribute("chatPort", Pref.ChatPort), new XAttribute("uiTheme", Pref.UiTheme), new XAttribute("readingThemeId", Pref.ReadingThemeId),
+                    new XAttribute("chatHost", Pref.ChatHost), new XAttribute("chatNick", Pref.ChatNick), new XAttribute("chatPort", Pref.ChatPort), new XAttribute("uiTheme", Pref.UiTheme), new XAttribute("readingThemeId", Pref.ReadingThemeId), new XAttribute("exitMode", Pref.ExitMode),
                     new XAttribute("stealth", Pref.Stealth ? "true" : "false"), new XAttribute("clickThrough", Pref.ClickThrough ? "true" : "false"), new XAttribute("uiDark", Pref.UiDark ? "true" : "false")));
             foreach (Book b in Books) root.Add(new XElement("book", new XAttribute("id", b.Id), new XAttribute("title", b.Title), new XAttribute("format", b.Format), new XAttribute("position", b.Position), new XAttribute("bookmark", b.Bookmark), new XAttribute("length", b.Length), new XAttribute("completed", b.Completed ? "true" : "false"), new XAttribute("pinned", b.IsPinned ? "true" : "false"), new XAttribute("group", b.Group)));
             return root;
