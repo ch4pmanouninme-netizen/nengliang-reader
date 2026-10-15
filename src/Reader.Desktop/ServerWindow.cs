@@ -48,7 +48,8 @@ internal sealed class ServerWindow : Window
 
     public ServerWindow()
     {
-        Title = "良子小窗 · 聊天服务"; Width = 600; Height = 760; MinWidth = 520; MinHeight = 560;
+        Title = "良子小窗 · 聊天服务"; Icon = AppIcon.Shared;
+        Width = 600; Height = 760; MinWidth = 520; MinHeight = 560;
         string[] addresses = NetworkInterface.GetAllNetworkInterfaces().Where(n => n.OperationalStatus == OperationalStatus.Up)
             .OrderBy(n => n.NetworkInterfaceType == NetworkInterfaceType.Ethernet ? 0 : 1)
             .SelectMany(n => n.GetIPProperties().UnicastAddresses).Select(a => a.Address)

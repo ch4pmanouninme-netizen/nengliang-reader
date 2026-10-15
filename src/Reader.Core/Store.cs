@@ -15,6 +15,9 @@ namespace Reader.Core;
         private readonly SemaphoreSlim writes = new(1, 1);
         public readonly string Root;
         public readonly List<Book> Books = new List<Book>();
+        // 分组清单：文档顺序就是显示顺序。分组是独立实体，所以空分组能存活，
+        // 而书只持有分组名（见 Book.Group）。
+        private readonly List<string> groups = new List<string>();
         public readonly Preferences Pref = new Preferences();
         public string LastId = "";
         public string RecoveryNotice = "";
@@ -86,8 +89,34 @@ namespace Reader.Core;
                 Pref.ChatPort = Clamp(Number(p, "chatPort", 38417), 1, 65535);
                 Pref.ExitMode = Clamp(Number(p, "exitMode", Preferences.ExitUnset), Preferences.ExitUnset, Preferences.ExitProgram);
             }
+            LoadGroups(root, loaded);
             Books.Clear(); Books.AddRange(loaded);
             LastId = (string)root.Attribute("last") ?? "";
+        }
+
+        private void LoadGroups(XElement root, List<Book> loaded)
+        {
+            groups.Clear();
+            XElement list = root.Element("groups");
+            if (list != null)
+            {
+                foreach (XElement entry in list.Elements("group"))
+                {
+                    string name = ReadGroup((string)entry.Attribute("name"));
+                    if (name.Length > 0 && IndexOf(name) < 0) groups.Add(name);
+                }
+            }
+            else
+            {
+                // 旧版没有分组清单：按旧界面用的顺序（当前区域文化的字母序）推导，
+                // 否则升级后下拉框里的分组会莫名其妙地重新排队。
+                foreach (string name in loaded.Select(book => book.Group).Where(name => name.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(name => name, StringComparer.CurrentCulture))
+                    groups.Add(name);
+            }
+            // 自愈：书引用了但清单里没有的分组（文件被手工改过，或旧版写入的新名字）补到末尾。
+            foreach (string name in loaded.Select(book => book.Group).Where(name => name.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase))
+                if (IndexOf(name) < 0) groups.Add(name);
         }
 
         private static int Number(XElement e, string name, int fallback)
@@ -132,6 +161,8 @@ namespace Reader.Core;
         private XElement Snapshot()
         {
             XElement root = new XElement("reader", new XAttribute("version", "1"), new XAttribute("last", LastId),
+                // 空清单也要写出，否则空分组活不过一次重启。
+                new XElement("groups", groups.Select(name => new XElement("group", new XAttribute("name", name)))),
                 new XElement("preferences", new XAttribute("width", Pref.Width), new XAttribute("x", Pref.X), new XAttribute("y", Pref.Y), new XAttribute("hasPosition", Pref.HasPosition),
                     new XAttribute("seconds", Pref.Seconds), new XAttribute("lineCount", Pref.LineCount), new XAttribute("opacity", Pref.Opacity), new XAttribute("theme", Pref.Theme),
                     new XAttribute("fontSize", (int)Pref.FontSize), new XAttribute("fontName", Pref.FontName), new XAttribute("topMost", Pref.TopMost ? "true" : "false"),

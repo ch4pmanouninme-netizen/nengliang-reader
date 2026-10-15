@@ -23,7 +23,8 @@ internal sealed class HotkeyWindow : Window
     {
         failed = failedRows is { Length: > 0 } ? failedRows : new bool[keys.Length];
         Name = "HotkeyDialog";
-        Title = "全局快捷键"; Width = 600; SizeToContent = SizeToContent.Height; MinHeight = 260; MaxHeight = 650;
+        Title = "全局快捷键"; Icon = AppIcon.Shared;
+        Width = 600; SizeToContent = SizeToContent.Height; MinHeight = 260; MaxHeight = 650;
         CanResize = false; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var rows = new StackPanel { Margin = new Thickness(24), Spacing = 10 };
         rows.Children.Add(new TextBlock { Text = $"先点中一行，再按住 {Hotkeys.Modifier} 按下要用的键。", TextWrapping = TextWrapping.Wrap });

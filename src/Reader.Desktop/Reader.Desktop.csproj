@@ -3,9 +3,12 @@
     <OutputType>WinExe</OutputType>
     <AssemblyName>NengliangReader</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- WindowsLauncher 用 CreateAppHost(assemblyToCopyResourcesFrom:) 把这个图标带进「良子小窗.exe」。 -->
+    <ApplicationIcon>Assets/icon.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="OfficialThemes.json" LogicalName="Reader.Desktop.OfficialThemes.json" />
+    <EmbeddedResource Include="Assets/icon.png" LogicalName="Reader.Desktop.icon.png" />
     <ProjectReference Include="../Reader.Chat/Reader.Chat.csproj" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />

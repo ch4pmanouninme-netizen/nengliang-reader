@@ -87,6 +87,10 @@ public static class LibraryArchive
                 book.Bookmark = item.Book.Bookmark < 0 ? -1 : Store.Clamp(item.Book.Bookmark, 0, Math.Max(0, item.Text.Length - 1));
                 book.Completed = item.Book.Completed; book.IsPinned = item.Book.IsPinned; book.Group = item.Book.Group; added++;
             }
+            // 分组清单也要跟着合并。只带入至少有一本书引用到的分组：空分组不跨库导入，
+            // 与上面“逐本合并、重复书保留目的地组织”的语义保持一致。顺序沿用备份里的清单顺序。
+            store.RegisterGroups(restored.GroupNames.Where(name =>
+                imported.Any(item => string.Equals(item.Book.Group, name, StringComparison.OrdinalIgnoreCase))));
             store.Save(); return added;
         }
         finally { Directory.Delete(staging, true); }

@@ -11,7 +11,8 @@ internal sealed class HomeSettingsWindow : Window
     public HomeSettingsWindow(Preferences preferences)
     {
         Name = "HomeSettingsDialog";
-        Title = "良子小窗设置"; Width = 420; SizeToContent = SizeToContent.Height; MinHeight = 200; MaxHeight = 650;
+        Title = "良子小窗设置"; Icon = AppIcon.Shared;
+        Width = 420; SizeToContent = SizeToContent.Height; MinHeight = 200; MaxHeight = 650;
         CanResize = false; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var rows = new StackPanel { Margin = new Thickness(24), Spacing = 12 };
         rows.Children.Add(UiThemes.CreatePicker(preferences, () => { }));

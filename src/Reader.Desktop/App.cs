@@ -2,8 +2,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Themes.Fluent;
-using Avalonia.Media.Imaging;
-using Avalonia.Platform;
 using Avalonia.Threading;
 using Reader.Core;
 
@@ -62,7 +60,7 @@ public sealed class App : Application
                 Add(menu, "主页", home.Restore);
                 Add(menu, "隐藏 / 恢复窗口", home.ToggleVisibility);
                 Add(menu, "退出", library.RequestExit);
-                tray = new TrayIcon { Icon = CreateIcon(), ToolTipText = "良子小窗", Menu = menu, IsVisible = true };
+                tray = new TrayIcon { Icon = AppIcon.Shared, ToolTipText = "良子小窗", Menu = menu, IsVisible = true };
                 tray.Clicked += (_, _) => home.Restore();
                 TrayIcon.SetIcons(this, new TrayIcons { tray });
                 library.StartIntegration();
@@ -101,16 +99,4 @@ public sealed class App : Application
         menu.Add(item);
     }
 
-    private static WindowIcon CreateIcon()
-    {
-        using var bitmap = new WriteableBitmap(new PixelSize(32, 32), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Opaque);
-        using (var buffer = bitmap.Lock())
-        {
-            int[] pixels = new int[32 * 32];
-            for (int y = 0; y < 32; y++)
-                for (int x = 0; x < 32; x++) pixels[y * 32 + x] = y is >= 9 and <= 22 && x is >= 7 and <= 24 ? unchecked((int)0xffeeeeee) : unchecked((int)0xff295b46);
-            for (int y = 0; y < 32; y++) System.Runtime.InteropServices.Marshal.Copy(pixels, y * 32, buffer.Address + y * buffer.RowBytes, 32);
-        }
-        return new WindowIcon(bitmap);
-    }
 }

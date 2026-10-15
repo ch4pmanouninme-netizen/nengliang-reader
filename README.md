@@ -2,7 +2,7 @@
 
 适用于 Windows 和 macOS 的悬浮阅读与局域网加密聊天工具。基于上游 v1.5.2 迁移，保留 TXT / EPUB、进度保存、全局快捷键，并提供链接下载与跨平台书库备份。
 
-**当前版本：2.3.3。** 基于上游 v1.5.2 迁移，原始源码保留在 [`legacy/v1.5.2/`](legacy/v1.5.2/)。Windows 与 macOS 的构建和回归检查由 CI 与发布流水线执行；Mac 实机交互、签名与公证尚未完成，具体限制见下方平台验证状态。
+**当前版本：2.3.4。** 基于上游 v1.5.2 迁移，原始源码保留在 [`legacy/v1.5.2/`](legacy/v1.5.2/)。Windows 与 macOS 的构建和回归检查由 CI 与发布流水线执行；Mac 实机交互、签名与公证尚未完成，具体限制见下方平台验证状态。
 
 [发行版本](https://github.com/ch4pmanouninme-netizen/nengliang-reader/releases) · [提交问题](https://github.com/ch4pmanouninme-netizen/nengliang-reader/issues) · [更新日志](CHANGELOG.md) · [构建与发布](docs/RELEASE.md)
 
@@ -10,13 +10,13 @@
 
 v2.2.0 新增： VS Code 的 19 个与 JetBrains 的 8 个官方内置主题，按软件分组选择；阅读条也可独立选择这 27 套主题。选择自动保存，并保留原有自定义配色及旧配置兼容。来源、完整清单与映射范围见 [官方主题配色](docs/EDITOR-THEMES.md)。
 
-- **统一主页**：阅读和聊天独立开关，右上角「设置」调整主题色与关闭主页的行为（收进托盘或退出程序）。首次关闭主页会先询问并记住选择，其后可在设置中修改。
+- **统一主页**：阅读和聊天独立开关，右上角「设置」调整主题色与关闭主页的行为（收进托盘或退出程序）。首次关闭主页会先询问并记住选择，其后可在设置中修改；点标题「良子小窗」查看关于（图标、版本与开源地址，地址可选中复制）。
 - **加密聊天**：兼容上游 v1.5 协议，TLS 1.2、SHA-256 指纹校验、限流、有界缓存、自动重连。
 - **独立服务**：Windows/macOS 均能启动聊天服务，客户端退出不影响独立服务。
 - **本机部署**：仓库 `scripts/` 在桌面生成「启动 / 停止 / 更新」三个入口，代码固定装在本机一处，更新只需拉代码重启；详见 [团队内部部署](scripts/README.md)。
 
 - **本地阅读**：TXT（UTF-8、UTF-16、GBK/GB18030）和 EPUB 纯文本导入，支持拖放。
-- **书库管理**：右键书籍删除、置顶/取消置顶、新建或选择分组；左侧下拉框筛选全部书籍、未分组或指定分组。置顶与分组随进度保存并进入书库备份，详见 [书库管理](docs/BOOK-LIBRARY.md)。
+- **书库管理**：右键书籍删除、置顶/取消置顶、选择分组；Ctrl / Shift 多选后可批量操作；「管理分组」窗口支持新建（含空分组）、重命名、删除与手动排序；左侧下拉框筛选全部书籍、未分组或指定分组。置顶与分组随进度保存并进入书库备份，详见 [书库管理](docs/BOOK-LIBRARY.md)。
 - **悬浮阅读**：1～10 行显示、拖动定位、右边缘调整宽度、字号、透明度和多种外观。
 - **阅读操作**：前后翻页、自动翻页、查找、百分比跳转，每本书一个书签。
 - **快捷控制**：自定义全局快捷键、注册失败提示、鼠标穿透、托盘/菜单栏恢复入口。
@@ -52,7 +52,7 @@ Mac 在 Spaces、全屏应用、睡眠唤醒及不同键盘布局下的行为需
 
 ## 下载与使用
 
-在 [Releases](https://github.com/ch4pmanouninme-netizen/nengliang-reader/releases) 中选择对应平台。选择 v2.3.3 的平台安装包；Source code 为源码归档。
+在 [Releases](https://github.com/ch4pmanouninme-netizen/nengliang-reader/releases) 中选择对应平台。选择 v2.3.4 的平台安装包；Source code 为源码归档。
 
 - Windows：完整解压 `NengliangReader-win-x64.zip`，运行根目录的 `良子小窗.exe`。根目录仅含 EXE、`README.md` 和 `app/`；请保留 `app/` 与 EXE 的相对位置，可为 EXE 创建桌面快捷方式。旧版发行包的入口仍为 `NengliangReader.exe`。
 - Mac：根据芯片选择 `osx-arm64` 或 `osx-x64`，打开 DMG，将应用复制到“应用程序”。带 `unsigned` 的文件尚未完成 Developer ID 签名与 Apple 公证，系统可能阻止打开；请勿关闭系统安全保护。
@@ -74,7 +74,7 @@ Mac 在 Spaces、全屏应用、睡眠唤醒及不同键盘布局下的行为需
 
 ### 本地阅读
 
-1. 从主页进入“阅读”，点击“打开”选择 TXT/EPUB，或将文件拖入书架。
+1. 从主页进入“阅读”，点击“导入”选择 TXT/EPUB，或将文件拖入书架。
 2. 选择书籍，点击“显示”。
 3. 拖动阅读条调整位置，拖动右边缘调整宽度。
 4. 右键打开翻页、书签、查找与设置菜单；双击阅读条返回书架。
@@ -138,7 +138,7 @@ Windows 使用 `Ctrl + Alt`，Mac 使用 `Control + Option`，再加下表按键
 
 助手设置单独保存在 `agent.xml`，包含端点、模型、昵称、触发方式和密钥。Windows 上密钥经 DPAPI 加密后写入，同一用户账户下的其他进程仍可解密；其他平台没有 DPAPI，密钥以明文保存并在文件中标记 `protected="false"`，请自行限制该文件的访问权限。关闭助手不会自动清除已保存的密钥。
 
-使用“书库备份 → 导出书库”备份书籍与进度；导入时合并书籍，重复书籍不覆盖当前进度。备份不包含全局快捷键；导入不会覆盖目标设备外观或窗口位置。单个备份导入上限为展开后 256 MB。
+使用“书库备份 → 导出书库”备份书籍与进度；导入时合并书籍，重复书籍不覆盖当前进度，分组清单随备份一起带过来（只有确实被导入的书引用到的分组才会建立）。备份不包含全局快捷键；导入不会覆盖目标设备外观或窗口位置。单个备份导入上限为展开后 256 MB。
 
 ## 从源码运行
 
@@ -188,13 +188,13 @@ Windows：`pwsh ./build/package-windows.ps1`。Mac：`bash build/package-macos.s
 ```text
 src/Reader.Core/               导入、阅读会话、存储、下载与书库备份
 src/Reader.Chat/               v1.5 兼容协议、TLS、服务与客户端连接
-src/Reader.Desktop/            Avalonia 界面与交互
+src/Reader.Desktop/            Avalonia 界面与交互（Assets/ 放应用图标）
 src/Reader.Platform.Windows/   Windows 热键和鼠标穿透
 src/Reader.Platform.Mac/       macOS 热键和鼠标穿透
 tests/Reader.Core.Tests/       跨平台回归测试
 tests/Reader.Chat.Tests/       TLS、协议边界与上游互通测试
 scripts/                       启动 / 停止 / 更新脚本（团队内部部署）
-build/                        安装包与签名脚本
+build/                        安装包与签名脚本，以及图标生成器 make-icon.py
 docs/                         实施范围、验证与发布说明
 legacy/                       历史 Windows Forms 源码，含 v1.5.2 快照
 ```
