@@ -79,7 +79,7 @@ internal sealed class ServerWindow : Window
         copyNotice.Bind(Border.BorderBrushProperty, new DynamicResourceExtension("ReaderHeaderForeground"));
         copyNoticeTimer.Tick += (_, _) => { copyNotice.IsVisible = false; copyNoticeTimer.Stop(); };
         Content = new Grid { Children = { new ScrollViewer { Content = panel }, copyNotice } };
-        toggle.Click += (_, _) => Toggle();
+        toggle.Click += async (_, _) => await Toggle();
         agentEnabled.PropertyChanged += (_, e) => { if (e.Property == ToggleButton.IsCheckedProperty) SyncAgentFields(); };
         copy.Click += async (_, _) =>
         {
@@ -101,18 +101,25 @@ internal sealed class ServerWindow : Window
         Closing += async (_, e) =>
         {
             if (server == null || confirmed) return;
-            e.Cancel = true; if (confirming) return; confirming = true;
-            try
-            {
-                if (await Dialogs.Confirm(this, "关闭聊天服务",
-                    "是否确认关闭聊天服务？(｡•́︿•̀｡)\n你是主机哦 awa，你关了大家都没得聊了 qwq\n关闭会断开所有人并清空聊天历史。",
-                    "不聊？那就都别聊了！(╯°□°)╯", "接着奏乐接着舞 ヾ(≧▽≦*)o")) { confirmed = true; Close(); }
-            }
-            finally { confirming = false; }
+            e.Cancel = true;
+            if (await ConfirmStopAsync() && !closed) { confirmed = true; Close(); }
         };
         Closed += (_, _) => { closed = true; timer.Stop(); copyNoticeTimer.Stop(); StopAgent(); server?.Dispose(); certificate.Dispose(); code.Clear(); };
         LoadAgentSettings(); SyncAgentFields();
         _ = RefreshTheme(); timer.Start();
+    }
+
+    private async Task<bool> ConfirmStopAsync()
+    {
+        if (confirming || closed) return false;
+        confirming = true;
+        try
+        {
+            return await Dialogs.Confirm(this, "关闭聊天服务",
+                "是否确认关闭聊天服务？(｡•́︿•̀｡)\n你是主机哦 awa，你关了大家都没得聊了 qwq\n关闭会断开所有人并清空聊天历史。",
+                "不聊？那就都别聊了！(╯°□°)╯", "接着奏乐接着舞 ヾ(≧▽≦*)o");
+        }
+        finally { confirming = false; }
     }
 
     private void LoadAgentSettings()
@@ -168,9 +175,13 @@ internal sealed class ServerWindow : Window
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or XmlException) { /* Keep last appearance during an atomic save. */ }
         finally { readingTheme = false; }
     }
-    private void Toggle()
+    private async Task Toggle()
     {
-        if (server != null) { StopAgent(); server.Dispose(); server = null; agentState.Text = "服务已停止。"; status.Text = "服务已停止，历史已清空。"; }
+        if (server != null)
+        {
+            if (!await ConfirmStopAsync() || closed || server == null) return;
+            StopAgent(); server.Dispose(); server = null; agentState.Text = "服务已停止。"; status.Text = "服务已停止，历史已清空。";
+        }
         else
         {
             try
