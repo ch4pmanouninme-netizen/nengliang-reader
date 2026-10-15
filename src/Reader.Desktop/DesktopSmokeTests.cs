@@ -1,5 +1,7 @@
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using Reader.Chat;
 using Reader.Core;
 using System.Collections.Concurrent;
@@ -23,7 +25,16 @@ internal static class DesktopSmokeTests
     }
     public static async Task Run(HomeWindow home, MainWindow library, Store store)
     {
-        home.Restore(); home.OpenChat(); var chat = home.Chat!;
+        home.Restore();
+        var lifetime = (IClassicDesktopStyleApplicationLifetime)Avalonia.Application.Current!.ApplicationLifetime!;
+        Button ChoiceButton(Window dialog, string name) => dialog.GetVisualDescendants().OfType<Button>().Single(item => item.Name == name);
+        home.PickChat();
+        await Wait(() => lifetime.Windows.Any(window => window.Name == "ChatModeDialog"));
+        var modeDialog = lifetime.Windows.Single(window => window.Name == "ChatModeDialog");
+        ChoiceButton(modeDialog, "JoinRoom").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Wait(() => home.Chat != null && home.Chat.IsVisible);
+        Check(modeDialog.IsVisible == false && lifetime.Windows.All(window => window.Name != "ChatModeDialog"), "join choice closes and opens the chat client");
+        var chat = home.Chat!;
         Check(home.IsVisible && chat.IsVisible, "opening chat preserves visible home");
         chat.Close(); Check(home.IsVisible && home.Chat == null, "closing chat preserves home");
         home.Hide(); home.OpenChat(); chat = home.Chat!;
@@ -54,6 +65,14 @@ internal static class DesktopSmokeTests
         Check(Field<TextBox>(chat, "transcript").Text is null or "" && Field<TextBox>(chat, "code").Text is null or "", "closing clears cache and secret");
         Check(!home.IsVisible, "closing chat preserves hidden home");
         home.Restore(); Capture(home, Path.Combine(store.Root, "home.png")); home.Close(); Check(!home.IsVisible, "home close hides rather than exits");
+        home.Restore(); home.PickChat();
+        await Wait(() => lifetime.Windows.Any(window => window.Name == "ChatModeDialog"));
+        modeDialog = lifetime.Windows.Single(window => window.Name == "ChatModeDialog");
+        // Creating would spawn a real service process; the dialog only needs to offer the choice.
+        Check(ChoiceButton(modeDialog, "CreateRoom").Content?.ToString() == "创建房间", "dialog offers hosting a room");
+        ChoiceButton(modeDialog, "CancelChatMode").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Wait(() => modeDialog.IsVisible == false);
+        Check(lifetime.Windows.All(window => window.Name != "ChatModeDialog") && home.Chat == null, "cancel closes the choice without opening either chat mode");
         var reserve = new TcpListener(IPAddress.Loopback, 0); reserve.Start(); int port = ((IPEndPoint)reserve.LocalEndpoint).Port; reserve.Stop();
         var serviceUi = new ServerWindow(); serviceUi.Show();
         Field<ComboBox>(serviceUi, "address").SelectedItem = "127.0.0.1"; Field<TextBox>(serviceUi, "port").Text = port.ToString();
