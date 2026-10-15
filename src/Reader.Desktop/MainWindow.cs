@@ -17,7 +17,7 @@ internal sealed partial class MainWindow : Window
     private readonly ListBox books = new() { MinWidth = 160 };
     private readonly TextBlock description = new() { Text = "打开 TXT / EPUB，或将文件拖到窗口。", TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly TextBlock shortcuts = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12 };
+    private readonly StackPanel shortcuts = new() { Spacing = 2 };
     private readonly ProgressBar progress = new() { Minimum = 0, Maximum = 100, Height = 6 };
     private readonly WrapPanel actions = new() { Orientation = Orientation.Horizontal };
     private readonly Button cancel = new() { Content = "取消下载", IsVisible = false };
@@ -41,7 +41,7 @@ internal sealed partial class MainWindow : Window
     public MainWindow(Store store)
     {
         this.store = store;
-        Title = "良子阅读器"; Width = 780; Height = 500; MinWidth = 600; MinHeight = 380;
+        Title = "良子阅读器"; Width = 780; Height = 560; MinWidth = 600; MinHeight = 380;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         var root = new DockPanel { Margin = new Thickness(24), LastChildFill = true };
         var header = new StackPanel { Spacing = 6, Margin = new Thickness(0, 0, 0, 20) };
@@ -104,8 +104,32 @@ internal sealed partial class MainWindow : Window
     {
         if (Program.SmokeTest || integrationStarted) return;
         integrationStarted = true;
-        try { hotkeys = new Hotkeys(store.Root, HandleHotkey); shortcuts.Text = hotkeys.Caption; }
-        catch (Exception ex) { shortcuts.Text = "全局快捷键不可用；可通过托盘 / 菜单栏操作。"; status.Text = ex.Message; }
+        try { hotkeys = new Hotkeys(store.Root, HandleHotkey); }
+        catch (Exception ex) { status.Text = ex.Message; }
+        RefreshShortcuts();
+    }
+
+    // 书库底部的快捷键表格：每个功能一行，功能名与组合键分两列对齐。
+    private void RefreshShortcuts()
+    {
+        shortcuts.Children.Clear();
+        if (hotkeys == null)
+        {
+            shortcuts.Children.Add(new TextBlock { Text = "全局快捷键不可用；可通过托盘 / 菜单栏操作。", TextWrapping = TextWrapping.Wrap, FontSize = 12 });
+            return;
+        }
+        shortcuts.Children.Add(new TextBlock { Text = $"全局快捷键（{Hotkeys.Modifier}）", FontSize = 12, Foreground = Brushes.Gray });
+        var rows = new Grid { ColumnDefinitions = new ColumnDefinitions("64,*") };
+        for (int index = 0; index < Hotkeys.Functions.Length; index++)
+        {
+            rows.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var name = new TextBlock { Text = Hotkeys.Functions[index], FontSize = 12 };
+            var combo = new TextBlock { Text = hotkeys.Combo(index), FontSize = 12 };
+            Grid.SetRow(name, index); Grid.SetColumn(name, 0);
+            Grid.SetRow(combo, index); Grid.SetColumn(combo, 1);
+            rows.Children.Add(name); rows.Children.Add(combo);
+        }
+        shortcuts.Children.Add(rows);
     }
 
     private void HandleHotkey(int id)
@@ -298,8 +322,12 @@ internal sealed partial class MainWindow : Window
         dialogOpen = true;
         try
         {
-            string? value = await Dialogs.Prompt(this, "全局快捷键", "依次输入：隐藏、下一页、上一页、穿透、自动阅读。以逗号分隔。支持 A–Z、F1–F12、Left、Right、Space；固定搭配 Ctrl+Alt（Mac 为 Control+Option）。", string.Join(",", hotkeys.Keys));
-            if (value != null) { hotkeys.Configure(value.Split(',').Select(key => key.Trim()).ToArray()); shortcuts.Text = hotkeys.Caption; }
+            var window = new HotkeyWindow(hotkeys.Keys);
+            if (await window.ShowDialog<bool>(this) && window.Result != null)
+            {
+                hotkeys.Configure(window.Result);
+                RefreshShortcuts();
+            }
         }
         catch (Exception ex) { status.Text = ex.Message; }
         finally { dialogOpen = false; }

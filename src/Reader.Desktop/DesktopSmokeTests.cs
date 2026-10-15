@@ -89,6 +89,20 @@ internal static class DesktopSmokeTests
         ChoiceButton(modeDialog, "CancelChatMode").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         await Wait(() => modeDialog.IsVisible == false);
         Check(lifetime.Windows.All(window => window.Name != "ChatModeDialog") && home.Chat == null, "cancel closes the choice without opening either chat mode");
+        // Hotkey editing is a real window in the shipping build; smoke mode skips the native registration,
+        // so the dialog is driven directly. Validity must gate the save button row by row.
+        var hotkeyUi = new HotkeyWindow(["H", "Right", "Left", "M", "Space"]);
+        var keys = Field<TextBox[]>(hotkeyUi, "boxes");
+        var saveHotkeys = Field<Button>(hotkeyUi, "save");
+        Check(saveHotkeys.IsEnabled, "hotkey dialog accepts the defaults");
+        keys[0].Text = "Right"; Check(!saveHotkeys.IsEnabled, "hotkey dialog blocks a duplicate key");
+        Check(Field<TextBlock[]>(hotkeyUi, "errors")[0].Text == "与其他行重复", "duplicate key is reported on its own row");
+        keys[0].Text = "F9"; Check(saveHotkeys.IsEnabled, "hotkey dialog accepts a different valid key");
+        keys[0].Text = "Nope"; Check(!saveHotkeys.IsEnabled && Field<TextBlock[]>(hotkeyUi, "errors")[0].Text == "无效按键", "hotkey dialog blocks an unsupported key name");
+        keys[0].Text = "f9"; Check(saveHotkeys.IsEnabled, "hotkey dialog accepts a lower-case key name");
+        saveHotkeys.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Check(hotkeyUi.Result is ["F9", "Right", "Left", "M", "Space"], "saved hotkeys are normalised to canonical names");
+        hotkeyUi.Close();
         var reserve = new TcpListener(IPAddress.Loopback, 0); reserve.Start(); int port = ((IPEndPoint)reserve.LocalEndpoint).Port; reserve.Stop();
         var serviceUi = new ServerWindow(); serviceUi.Show();
         Field<ComboBox>(serviceUi, "address").SelectedItem = "127.0.0.1"; Field<TextBox>(serviceUi, "port").Text = port.ToString();

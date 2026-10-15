@@ -12,7 +12,7 @@ internal sealed class Hotkeys : IDisposable
     private IDisposable? native;
     private List<int> failed = [];
     public string[] Keys { get; private set; } = ["H", "Right", "Left", "M", "Space"];
-    private static readonly string[] Labels = ["隐藏", "下一页", "上一页", "穿透", "自动阅读"];
+    public static readonly string[] Functions = ["隐藏", "下一页", "上一页", "穿透", "自动阅读"];
     // Hardware keycodes used by macOS's registered-hotkey API.
     private static readonly Dictionary<string, uint> MacKeys = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -22,8 +22,21 @@ internal sealed class Hotkeys : IDisposable
         ["F1"]=122,["F2"]=120,["F3"]=99,["F4"]=118,["F5"]=96,["F6"]=97,["F7"]=98,["F8"]=100,
         ["F9"]=101,["F10"]=109,["F11"]=103,["F12"]=111
     };
-    public string Caption => (OperatingSystem.IsMacOS() ? "Control+Option+" : "Ctrl+Alt+") +
-        string.Join(" · ", Keys.Select((key, index) => key + " " + Labels[index] + (failed.Contains(index + 1) ? "（注册失败）" : "")));
+    public static string Modifier => OperatingSystem.IsMacOS() ? "Control + Option" : "Ctrl + Alt";
+    // 每个功能单独一行显示，注册失败的键单独标注，而不是塞进一段拼接文本。
+    public bool Failed(int index) => failed.Contains(index + 1);
+    public string Combo(int index) => Modifier + " + " + Display(Keys[index]) + (Failed(index) ? "（注册失败）" : "");
+    // 方向键和空格用符号/中文显示；其余按键原名照登。仅影响展示，可输入的键名不变。
+    public static string Display(string key) => key.Equals("Left", StringComparison.OrdinalIgnoreCase) ? "←"
+        : key.Equals("Right", StringComparison.OrdinalIgnoreCase) ? "→"
+        : key.Equals("Space", StringComparison.OrdinalIgnoreCase) ? "空格" : key;
+    // 把用户输入归一化成 hotkeys.json 里的规范写法（大小写不敏感），无效返回 null。
+    public static string? Canonical(string key)
+    {
+        string trimmed = key.Trim();
+        foreach (string name in MacKeys.Keys) if (string.Equals(name, trimmed, StringComparison.OrdinalIgnoreCase)) return name;
+        return null;
+    }
 
     public Hotkeys(string root, Action<int> action)
     {
