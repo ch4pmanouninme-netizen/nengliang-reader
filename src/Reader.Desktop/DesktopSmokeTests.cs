@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using Reader.Chat;
@@ -89,20 +90,66 @@ internal static class DesktopSmokeTests
         ChoiceButton(modeDialog, "CancelChatMode").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         await Wait(() => modeDialog.IsVisible == false);
         Check(lifetime.Windows.All(window => window.Name != "ChatModeDialog") && home.Chat == null, "cancel closes the choice without opening either chat mode");
-        // Hotkey editing is a real window in the shipping build; smoke mode skips the native registration,
-        // so the dialog is driven directly. Validity must gate the save button row by row.
+        // Recording a combo only works if the system stops routing it to the app's own hotkeys first,
+        // so the real registration is exercised here rather than assumed.
+        var held = new Hotkeys(store.Root, _ => { });
+        Check(held.FailedCount == 0, "hotkeys register on this platform");
+        var blocked = new Hotkeys(store.Root, _ => { });
+        Check(blocked.FailedCount == 5, "the same combos cannot be taken twice while held");
+        blocked.Dispose();
+        held.Suspend();
+        var afterSuspend = new Hotkeys(store.Root, _ => { });
+        Check(afterSuspend.FailedCount == 0, "suspend releases the system hotkeys so a capture can read them");
+        afterSuspend.Dispose();
+        held.Resume();
+        Check(held.FailedCount == 0, "resume takes the hotkeys back");
+        held.Dispose();
         var hotkeyUi = new HotkeyWindow(["H", "Right", "Left", "M", "Space"]);
         var keys = Field<TextBox[]>(hotkeyUi, "boxes");
         var saveHotkeys = Field<Button>(hotkeyUi, "save");
+        var hkErrors = Field<TextBlock[]>(hotkeyUi, "errors");
+        // Keys are raised on the window, matching real routing: the boxes are never in the route
+        // unless focus happens to sit on them, which is what made per-box handlers dead on open.
+        void Press(int row, Key keyName, KeyModifiers modifiers)
+        {
+            hotkeyUi.Select(row);
+            hotkeyUi.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = keyName, KeyModifiers = modifiers });
+        }
         Check(saveHotkeys.IsEnabled, "hotkey dialog accepts the defaults");
-        keys[0].Text = "Right"; Check(!saveHotkeys.IsEnabled, "hotkey dialog blocks a duplicate key");
-        Check(Field<TextBlock[]>(hotkeyUi, "errors")[0].Text == "与其他行重复", "duplicate key is reported on its own row");
-        keys[0].Text = "F9"; Check(saveHotkeys.IsEnabled, "hotkey dialog accepts a different valid key");
-        keys[0].Text = "Nope"; Check(!saveHotkeys.IsEnabled && Field<TextBlock[]>(hotkeyUi, "errors")[0].Text == "无效按键", "hotkey dialog blocks an unsupported key name");
-        keys[0].Text = "f9"; Check(saveHotkeys.IsEnabled, "hotkey dialog accepts a lower-case key name");
+        hotkeyUi.Select(1);
+        Check(hkErrors[1].Text!.Contains("按") && hkErrors[0].Text == "", "the selected row shows where the next key lands");
+        Press(0, Key.F9, KeyModifiers.Control | KeyModifiers.Alt);
+        Check(keys[0].Text == "F9" && saveHotkeys.IsEnabled, "holding the modifier combo records the pressed key");
+        Press(0, Key.D1, KeyModifiers.Control | KeyModifiers.Alt);
+        Check(keys[0].Text == "F9", "unsupported keys are ignored instead of replacing the value");
+        Press(0, Key.F9, KeyModifiers.None);
+        Check(keys[0].Text == "F9" && hkErrors[0].Text!.Contains("需同时按住"), "capture without the modifier combo is refused with a hint");
+        // Row 1 already holds "Right", so recording Right into row 0 has to flag both rows.
+        Press(0, Key.Right, KeyModifiers.Control | KeyModifiers.Alt);
+        Check(keys[0].Text == "Right" && !saveHotkeys.IsEnabled, "a key already used by another row is refused");
+        Check(hkErrors[0].Text == "与其他行重复" && hkErrors[1].Text == "与其他行重复", "both rows of a duplicate are flagged");
+        Press(0, Key.F9, KeyModifiers.Control | KeyModifiers.Alt);
+        Check(saveHotkeys.IsEnabled && hkErrors.Skip(1).All(error => error.Text == ""), "resolving the duplicate clears the other rows");
+        hotkeyUi.Show();
+        await Task.Delay(200);
+        Capture(hotkeyUi, Path.Combine(store.Root, "hotkeys.png"));
+        // 每行的清除图标解绑该功能，空位必须仍然可保存；重置只恢复这一行的默认键。
+        var clearIcons = keys.Select(box => box.InnerRightContent).OfType<Button>().ToArray();
+        Check(clearIcons.Length == 5 && clearIcons[4].Name == "Clear4", "every row carries its own clear icon inside the box");
+        clearIcons[4].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Check(keys[4].Text == "" && saveHotkeys.IsEnabled, "clearing one row unbinds it without blocking the save");
+        hotkeyUi.Select(4); hotkeyUi.Reset(4);
+        Check(keys[4].Text == "Space" && keys[3].Text == "M", "resetting a row restores only that row's default");
+        hotkeyUi.Select(4); hotkeyUi.Clear(4);
         saveHotkeys.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        Check(hotkeyUi.Result is ["F9", "Right", "Left", "M", "Space"], "saved hotkeys are normalised to canonical names");
+        Check(hotkeyUi.Result is ["F9", "Right", "Left", "M", ""], "an unbound row is saved as an empty slot");
         hotkeyUi.Close();
+        // 未绑定的空位能从文件里读回、不注册，其余按键照常注册。
+        File.WriteAllText(Path.Combine(store.Root, "hotkeys.json"), "[\"F9\",\"Right\",\"Left\",\"M\",\"\"]");
+        var unbound = new Hotkeys(store.Root, _ => { });
+        Check(unbound.Keys[4].Length == 0 && unbound.FailedCount == 0, "an unbound slot loads and registers nothing while the rest stay bound");
+        Check(unbound.Combo(4) == "未绑定", "an unbound slot reads as unbound in the library caption");
+        unbound.Dispose();
         var reserve = new TcpListener(IPAddress.Loopback, 0); reserve.Start(); int port = ((IPEndPoint)reserve.LocalEndpoint).Port; reserve.Stop();
         var serviceUi = new ServerWindow(); serviceUi.Show();
         Field<ComboBox>(serviceUi, "address").SelectedItem = "127.0.0.1"; Field<TextBox>(serviceUi, "port").Text = port.ToString();

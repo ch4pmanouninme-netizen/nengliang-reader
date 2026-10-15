@@ -318,14 +318,24 @@ internal sealed partial class MainWindow : Window
 
     private async Task EditHotkeys()
     {
-        if (busy || dialogOpen || hotkeys == null) return;
+        // 热键不可用时要说出来：静默返回会让「快捷键」按钮看起来只是没反应。
+        if (hotkeys == null) { status.Text = "全局快捷键不可用；可通过托盘 / 菜单栏操作。"; return; }
+        if (busy || dialogOpen) return;
         dialogOpen = true;
         try
         {
-            var window = new HotkeyWindow(hotkeys.Keys);
-            if (await window.ShowDialog<bool>(this) && window.Result != null)
+            // 录入要读原始按键，而全局热键是系统级注册、会抢先收到，先停掉再开窗口。
+            hotkeys.Suspend();
+            string[]? chosen = null;
+            try
             {
-                hotkeys.Configure(window.Result);
+                var window = new HotkeyWindow(hotkeys.Keys);
+                if (await window.ShowDialog<bool>(this)) chosen = window.Result;
+            }
+            finally
+            {
+                try { if (chosen != null) hotkeys.Configure(chosen); else hotkeys.Resume(); }
+                catch (Exception ex) { status.Text = ex.Message; hotkeys.Resume(); }
                 RefreshShortcuts();
             }
         }

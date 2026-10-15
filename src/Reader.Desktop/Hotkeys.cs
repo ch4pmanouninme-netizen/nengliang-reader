@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Avalonia.Input;
 using Avalonia.Threading;
 using Reader.Platform.Windows;
 using Reader.Platform.Mac;
@@ -11,8 +12,10 @@ internal sealed class Hotkeys : IDisposable
     private readonly Action<int> action;
     private IDisposable? native;
     private List<int> failed = [];
-    public string[] Keys { get; private set; } = ["H", "Right", "Left", "M", "Space"];
+    public static readonly string[] Defaults = ["H", "Right", "Left", "M", "Space"];
     public static readonly string[] Functions = ["隐藏", "下一页", "上一页", "穿透", "自动阅读"];
+    // 空串表示该功能不绑定全局快捷键，不会注册，也不会在书库底部显示组合键。
+    public string[] Keys { get; private set; } = [.. Defaults];
     // Hardware keycodes used by macOS's registered-hotkey API.
     private static readonly Dictionary<string, uint> MacKeys = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -24,8 +27,10 @@ internal sealed class Hotkeys : IDisposable
     };
     public static string Modifier => OperatingSystem.IsMacOS() ? "Control + Option" : "Ctrl + Alt";
     // 每个功能单独一行显示，注册失败的键单独标注，而不是塞进一段拼接文本。
-    public bool Failed(int index) => failed.Contains(index + 1);
-    public string Combo(int index) => Modifier + " + " + Display(Keys[index]) + (Failed(index) ? "（注册失败）" : "");
+    public int FailedCount => failed.Count;
+    public bool IsFailed(int index) => failed.Contains(index + 1);
+    public string Combo(int index) => Keys[index].Length == 0 ? "未绑定"
+        : Modifier + " + " + Display(Keys[index]) + (IsFailed(index) ? "（注册失败）" : "");
     // 方向键和空格用符号/中文显示；其余按键原名照登。仅影响展示，可输入的键名不变。
     public static string Display(string key) => key.Equals("Left", StringComparison.OrdinalIgnoreCase) ? "←"
         : key.Equals("Right", StringComparison.OrdinalIgnoreCase) ? "→"
@@ -36,6 +41,19 @@ internal sealed class Hotkeys : IDisposable
         string trimmed = key.Trim();
         foreach (string name in MacKeys.Keys) if (string.Equals(name, trimmed, StringComparison.OrdinalIgnoreCase)) return name;
         return null;
+    }
+    // 空串表示不绑定；无效键名返回 null。
+    public static string? Normalize(string key)
+    {
+        string trimmed = key.Trim();
+        return trimmed.Length == 0 ? "" : Canonical(trimmed);
+    }
+    // 把按下的物理按键映射成键名；不在支持范围内的键返回 null。
+    public static string? NameOf(Key key)
+    {
+        if (key >= Key.A && key <= Key.Z) return key.ToString();
+        if (key >= Key.F1 && key <= Key.F12) return key.ToString();
+        return key switch { Key.Left => "Left", Key.Right => "Right", Key.Space => "Space", _ => null };
     }
 
     public Hotkeys(string root, Action<int> action)
@@ -60,25 +78,34 @@ internal sealed class Hotkeys : IDisposable
         File.WriteAllText(temp, JsonSerializer.Serialize(keys)); File.Move(temp, path, true);
         Keys = keys; native?.Dispose(); native = null; Register();
     }
+    // 录入期间必须先停掉全局热键：这些组合是系统级注册的，会抢先于窗口收到按键，
+    // 于是按 Ctrl+Alt+H 只会触发原来的功能，根本进不了录入框。
+    public void Suspend() { native?.Dispose(); native = null; }
+    public void Resume() { native?.Dispose(); native = null; Register(); }
+    // 空位允许：留空即不绑定，其余按键仍然必须有效且互不相同。
     private static void Validate(string[] keys)
     {
-        if (keys.Length != 5 || keys.Any(key => !MacKeys.ContainsKey(key)) || keys.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 5)
-            throw new ArgumentException("请输入 5 个互不相同的有效按键。");
+        string?[] normalized = keys.Select(Normalize).ToArray();
+        string[] bound = normalized.Where(key => !string.IsNullOrEmpty(key)).Select(key => key!).ToArray();
+        if (keys.Length != Defaults.Length || normalized.Any(key => key == null)
+            || bound.Distinct(StringComparer.OrdinalIgnoreCase).Count() != bound.Length)
+            throw new ArgumentException("请输入互不相同的有效按键；留空表示不绑定。");
     }
     private void Register()
     {
         Action<int> dispatch = id => Dispatcher.UIThread.Post(() => action(id));
+        int[] bound = Enumerable.Range(0, Keys.Length).Where(index => Keys[index].Length > 0).ToArray();
         if (OperatingSystem.IsWindows())
         {
-            var integration = new WindowsIntegration(Keys.Select((key, index) => (index + 1, WindowsKey(key))).ToArray(), dispatch);
+            var integration = new WindowsIntegration(bound.Select(index => (index + 1, WindowsKey(Keys[index]))).ToArray(), dispatch);
             native = integration; failed = integration.Failed;
         }
         else if (OperatingSystem.IsMacOS())
         {
-            var integration = new MacIntegration(Keys.Select((key, index) => (index + 1, MacKeys[key])).ToArray(), dispatch);
+            var integration = new MacIntegration(bound.Select(index => (index + 1, MacKeys[Keys[index]])).ToArray(), dispatch);
             native = integration; failed = integration.Failed;
         }
-        else failed = [1, 2, 3, 4, 5];
+        else failed = bound.Select(index => index + 1).ToList();
     }
     private static uint WindowsKey(string key)
     {
