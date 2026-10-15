@@ -43,7 +43,7 @@ internal sealed partial class MainWindow
         {
             if (book == null) return new TextBlock();
             var row = new StackPanel { Spacing = 3, Margin = new Thickness(0, 2), Background = Brushes.Transparent, ContextMenu = CreateBookMenu(book) };
-            row.Children.Add(new TextBlock { Text = (book.IsPinned ? "置顶 · " : "") + book.Title, TextTrimming = TextTrimming.CharacterEllipsis });
+            row.Children.Add(new TextBlock { Text = (book.IsPinned ? "★ " : "") + book.Title, TextTrimming = TextTrimming.CharacterEllipsis });
             // 已经按某个分组筛选时，每行再显示一遍分组名是冗余的。
             if ((groupFilter.SelectedItem as GroupChoice)?.Group == null)
                 row.Children.Add(new TextBlock { Text = book.Group.Length == 0 ? "未分组" : book.Group, FontSize = 11, Foreground = Brushes.Gray, TextTrimming = TextTrimming.CharacterEllipsis });
@@ -109,9 +109,8 @@ internal sealed partial class MainWindow
         bool allPinned = targets.All(target => target.IsPinned);
         var pin = new MenuItem { Header = allPinned ? "取消置顶" : "置顶", Name = "PinBook" };
         pin.Click += async (_, _) => await ChangeBooks(targets, () => store.SetPinnedAsync(targets, !allPinned), "置顶状态已保存。");
-        var groups = new MenuItem { Header = "分组", Name = "GroupBook" };
-        var create = new MenuItem { Header = "新建分组…", Name = "NewBookGroup" };
-        create.Click += async (_, _) => await NewBookGroup(targets); groups.Items.Add(create); groups.Items.Add(new Separator());
+        // 右键只负责“把书移到哪个组”；新建分组统一走「管理分组」窗口，不在这里重复一份。
+        var groups = new MenuItem { Header = "移动到分组", Name = "GroupBook" };
         void AddGroup(string label, string name)
         {
             bool current = targets.All(target => string.Equals(target.Group, name, StringComparison.OrdinalIgnoreCase));
@@ -141,22 +140,6 @@ internal sealed partial class MainWindow
         bool changed = false;
         await RunBusy(async () => { await update(); changed = true; status.Text = message; });
         if (changed) RefreshBooks(selected);
-    }
-
-    private async Task NewBookGroup(Book[] targets)
-    {
-        if (busy || dialogOpen || targets.Any(target => !store.Books.Contains(target))) return;
-        dialogOpen = true; string? name;
-        try
-        {
-            string description = targets.Length == 1
-                ? $"为《{targets[0].Title}》设置分组，最多 {Store.GroupNameLimit} 个字符。"
-                : $"为选中的 {targets.Length} 本书设置分组，最多 {Store.GroupNameLimit} 个字符。";
-            name = await Dialogs.Prompt(this, "新建分组", description, targets[0].Group);
-        }
-        finally { dialogOpen = false; }
-        if (string.IsNullOrWhiteSpace(name)) return;
-        await ChangeBooks(targets, () => store.SetGroupAsync(targets, name), "分组已保存。");
     }
 
     private async Task DeleteBooks(Book[] targets)

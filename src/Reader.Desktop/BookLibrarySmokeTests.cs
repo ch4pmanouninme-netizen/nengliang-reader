@@ -59,15 +59,15 @@ internal sealed partial class MainWindow
         menu = await RowMenu(target); Check(Item(menu, "PinBook").Header?.ToString() == "取消置顶", "pinned row offers unpin"); menu.Close(); Click(Item(menu, "PinBook"));
         await Wait(() => !busy && !target.IsPinned);
 
-        menu = await RowMenu(target); menu.Close();
-        Click(Item(menu, "GroupBook").Items.OfType<MenuItem>().Single(item => item.Name == "NewBookGroup"));
+        // 分组只在「管理分组」窗口里新建，右键只负责把书移进去。
         var appLifetime = (IClassicDesktopStyleApplicationLifetime)Avalonia.Application.Current!.ApplicationLifetime!;
-        await Wait(() => appLifetime.Windows.Any(window => window.Title == "新建分组"));
-        var groupDialog = appLifetime.Windows.Single(window => window.Title == "新建分组");
-        groupDialog.GetVisualDescendants().OfType<TextBox>().Single().Text = "测试分组";
-        groupDialog.GetVisualDescendants().OfType<Button>().Single(button => button.Content?.ToString() == "确定").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        await Wait(() => !busy && !dialogOpen && target.Group == "测试分组");
-        Check(new Store(store.Root).Books.Single(book => book.Id == target.Id).Group == "测试分组", "new-group menu persists organization");
+        await store.CreateGroupAsync("测试分组");
+        menu = await RowMenu(target); menu.Close();
+        Check(Item(menu, "GroupBook").Header?.ToString() == "移动到分组", "the submenu is a move action, not a group editor");
+        Check(!Item(menu, "GroupBook").Items.OfType<MenuItem>().Any(item => item.Name == "NewBookGroup"), "the move submenu no longer carries new-group");
+        Click(Item(menu, "GroupBook").Items.OfType<MenuItem>().Single(item => item.Tag is string group && group == "测试分组"));
+        await Wait(() => !busy && target.Group == "测试分组");
+        Check(new Store(store.Root).Books.Single(book => book.Id == target.Id).Group == "测试分组", "moving a book into a group persists");
         groupFilter.SelectedItem = groupFilter.Items.OfType<GroupChoice>().Single(choice => choice.Group == "测试分组");
         await Wait(() => !busy && session?.Book == target);
         Check(books.Items.Cast<Book>().SequenceEqual(new[] { target }), "group selector filters the visible shelf");
@@ -85,14 +85,11 @@ internal sealed partial class MainWindow
         books.SelectedItems.Add(batchA); books.SelectedItems.Add(batchB);
         await Task.Delay(150);
         Check(books.SelectedItems.Count == 3 && session?.Book == active, "selecting several books leaves the reading session on the current book");
+        await store.CreateGroupAsync("批量组");
         menu = await RowMenu(batchA); menu.Close();
         Check(menu.Items.OfType<MenuItem>().Any(item => item.Name == "BatchScope"), "the row menu announces that the action covers the whole selection");
-        Click(Item(menu, "GroupBook").Items.OfType<MenuItem>().Single(item => item.Name == "NewBookGroup"));
-        await Wait(() => appLifetime.Windows.Any(window => window.Title == "新建分组"));
-        var batchDialog = appLifetime.Windows.Single(window => window.Title == "新建分组");
-        batchDialog.GetVisualDescendants().OfType<TextBox>().Single().Text = "批量组";
-        batchDialog.GetVisualDescendants().OfType<Button>().Single(button => button.Content?.ToString() == "确定").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        await Wait(() => !busy && !dialogOpen && batchA.Group == "批量组" && batchB.Group == "批量组");
+        Click(Item(menu, "GroupBook").Items.OfType<MenuItem>().Single(item => item.Tag is string group && group == "批量组"));
+        await Wait(() => !busy && batchA.Group == "批量组" && batchB.Group == "批量组" && active.Group == "批量组");
         Check(active.Group == "批量组", "batch grouping covers every selected book");
 
         // 分组管理窗口：重名拒绝、空分组、重命名、排序、删除后书回未分组。
