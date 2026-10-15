@@ -26,15 +26,10 @@ internal sealed class Hotkeys : IDisposable
         ["F9"]=101,["F10"]=109,["F11"]=103,["F12"]=111
     };
     public static string Modifier => OperatingSystem.IsMacOS() ? "Control + Option" : "Ctrl + Alt";
-    // 每个功能单独一行显示，注册失败的键单独标注，而不是塞进一段拼接文本。
     public int FailedCount => failed.Count;
-    public bool IsFailed(int index) => failed.Contains(index + 1);
-    public string Combo(int index) => Keys[index].Length == 0 ? "未绑定"
-        : Modifier + " + " + Display(Keys[index]) + (IsFailed(index) ? "（注册失败）" : "");
-    // 方向键和空格用符号/中文显示；其余按键原名照登。仅影响展示，可输入的键名不变。
-    public static string Display(string key) => key.Equals("Left", StringComparison.OrdinalIgnoreCase) ? "←"
-        : key.Equals("Right", StringComparison.OrdinalIgnoreCase) ? "→"
-        : key.Equals("Space", StringComparison.OrdinalIgnoreCase) ? "空格" : key;
+    // 每个功能是否注册失败，供快捷键设置窗口在三行内标注。
+    public bool[] FailedRows => Enumerable.Range(0, Keys.Length).Select(index => failed.Contains(index + 1)).ToArray();
+    private bool IsFailed(int index) => failed.Contains(index + 1);
     // 把用户输入归一化成 hotkeys.json 里的规范写法（大小写不敏感），无效返回 null。
     public static string? Canonical(string key)
     {

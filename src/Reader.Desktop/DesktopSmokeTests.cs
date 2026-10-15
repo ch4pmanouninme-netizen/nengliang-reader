@@ -148,8 +148,16 @@ internal static class DesktopSmokeTests
         File.WriteAllText(Path.Combine(store.Root, "hotkeys.json"), "[\"F9\",\"Right\",\"Left\",\"M\",\"\"]");
         var unbound = new Hotkeys(store.Root, _ => { });
         Check(unbound.Keys[4].Length == 0 && unbound.FailedCount == 0, "an unbound slot loads and registers nothing while the rest stay bound");
-        Check(unbound.Combo(4) == "未绑定", "an unbound slot reads as unbound in the library caption");
+        Check(unbound.FailedRows[4] == false, "an unbound slot is not reported as a registration failure");
         unbound.Dispose();
+        // 注册失败只在快捷键窗口里标注，改了那一行就不再挂着过期的失败。
+        var marked = new HotkeyWindow(["H", "Right", "Left", "M", "Space"], [false, true, false, false, false]);
+        var markedErrors = Field<TextBlock[]>(marked, "errors");
+        Check(markedErrors[1].Text!.Contains("注册失败"), "a failed registration is flagged on its own row");
+        Check(!markedErrors[0].Text!.Contains("注册失败"), "rows that registered stay unmarked");
+        Field<TextBox[]>(marked, "boxes")[1].Text = "F8";
+        Check(markedErrors[1].Text == "", "editing a row clears its stale failure mark");
+        marked.Close();
         var reserve = new TcpListener(IPAddress.Loopback, 0); reserve.Start(); int port = ((IPEndPoint)reserve.LocalEndpoint).Port; reserve.Stop();
         var serviceUi = new ServerWindow(); serviceUi.Show();
         Field<ComboBox>(serviceUi, "address").SelectedItem = "127.0.0.1"; Field<TextBox>(serviceUi, "port").Text = port.ToString();

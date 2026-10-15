@@ -14,12 +14,14 @@ internal sealed class HotkeyWindow : Window
     private readonly TextBox[] boxes = new TextBox[Hotkeys.Functions.Length];
     private readonly TextBlock[] errors = new TextBlock[Hotkeys.Functions.Length];
     private readonly Button save = new() { Name = "SaveHotkeys", Content = "保存", IsDefault = true, IsEnabled = false };
+    private readonly bool[] failed;
     private int active;
     private string hint = "";
     public string[]? Result { get; private set; }
 
-    public HotkeyWindow(string[] keys)
+    public HotkeyWindow(string[] keys, bool[]? failedRows = null)
     {
+        failed = failedRows is { Length: > 0 } ? failedRows : new bool[keys.Length];
         Name = "HotkeyDialog";
         Title = "全局快捷键"; Width = 600; SizeToContent = SizeToContent.Height; MinHeight = 260; MaxHeight = 650;
         CanResize = false; WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -45,7 +47,8 @@ internal sealed class HotkeyWindow : Window
             boxes[index] = box; errors[index] = error;
             // PropertyChanged rather than TextChanged: the latter only fires once the box is attached
             // to a visual tree, which would leave validation dead until the window is shown.
-            box.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) Refresh(); };
+            // 改过值的那一行不再沿用旧的注册结果，否则会挂着一个已经过期的「注册失败」。
+            box.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) { failed[row] = false; Refresh(); } };
             box.GotFocus += (_, _) => Select(row);
             box.PointerPressed += (_, _) => { Select(row); box.Focus(); };
             // Acting on a row also selects it, so a following key press lands on the row just clicked.
@@ -124,9 +127,11 @@ internal sealed class HotkeyWindow : Window
             string invalid = names[index] == null ? "无效按键"
                 : names[index]!.Length > 0 && names.Count(name => name == names[index]) > 1 ? "与其他行重复" : "";
             if (invalid.Length > 0) valid = false;
+            bool unregistered = invalid.Length == 0 && failed[index];
             errors[index].Text = invalid.Length > 0 ? invalid
+                : unregistered ? "注册失败（可能被其他程序占用）"
                 : index == active ? (hint.Length > 0 ? hint : $"按 {Hotkeys.Modifier} + 键") : "";
-            errors[index].Foreground = invalid.Length > 0 ? Brushes.OrangeRed : Brushes.Gray;
+            errors[index].Foreground = invalid.Length > 0 || unregistered ? Brushes.OrangeRed : Brushes.Gray;
         }
         save.IsEnabled = valid;
     }
