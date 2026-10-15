@@ -24,6 +24,14 @@ internal static class DesktopSmokeTests
         while (!condition() && DateTime.UtcNow < end) await Task.Delay(30);
         Check(condition(), "timed out waiting for UI/network state");
     }
+    private static async Task<Window> Confirmation(Window owner)
+    {
+        await Wait(() => owner.OwnedWindows.Any(w => w.Name == "ConfirmationDialog" && w.IsVisible));
+        return owner.OwnedWindows.Single(w => w.Name == "ConfirmationDialog" && w.IsVisible);
+    }
+    private static Button DialogButton(Window dialog, string name) => dialog.GetVisualDescendants().OfType<Button>().Single(b => b.Name == name);
+    private static void Answer(Window dialog, string name) => DialogButton(dialog, name).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+    private static int HistoryCount(ChatServer server) => (int)typeof(ChatServer).GetProperty("HistoryCount", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(server)!;
     public static async Task Run(HomeWindow home, MainWindow library, Store store)
     {
         home.Restore();
@@ -162,10 +170,40 @@ internal static class DesktopSmokeTests
         var serviceUi = new ServerWindow(); serviceUi.Show();
         Field<ComboBox>(serviceUi, "address").SelectedItem = "127.0.0.1"; Field<TextBox>(serviceUi, "port").Text = port.ToString();
         Click(serviceUi, "toggle"); var service = Field<ChatServer>(serviceUi, "server");
-        using var client = new ChatConnection();
+        using var client = new ChatConnection(); var servicePackets = new ConcurrentQueue<ChatPacket>(); client.Received += servicePackets.Enqueue;
         await client.ConnectAsync("127.0.0.1", port, "服务测试", Field<TextBox>(serviceUi, "code").Text!, service.Fingerprint);
         Check(client.Connected, "service window starts real TLS server"); Capture(serviceUi, Path.Combine(store.Root, "server.png"));
-        Click(serviceUi, "toggle"); await Wait(() => !client.Connected); serviceUi.Close();
+        await client.SendAsync("取消停止后保留这条消息"); await Wait(() => servicePackets.Any(p => p.Text == "取消停止后保留这条消息"));
+        int history = HistoryCount(service);
+        Click(serviceUi, "toggle"); var confirmation = await Confirmation(serviceUi);
+        string stopMessage = ((TextBlock)((StackPanel)confirmation.Content!).Children[0]).Text!;
+        Check(stopMessage.Contains("(｡•́︿•̀｡)") && stopMessage.Contains("清空聊天历史"), "stop button keeps the existing emoticon warning");
+        Check(((TextBlock)DialogButton(confirmation, "Confirm").Content!).Text!.Contains("(╯°□°)╯")
+            && DialogButton(confirmation, "Cancel").IsDefault && DialogButton(confirmation, "Cancel").IsCancel, "stop warning keeps emoticon buttons and defaults to cancel");
+        Check(client.Connected && ReferenceEquals(service, Field<ChatServer>(serviceUi, "server")) && HistoryCount(service) == history, "opening stop confirmation keeps connections and history");
+        await Task.Delay(100); confirmation.UpdateLayout();
+        Capture(confirmation, Path.Combine(store.Root, "server-stop-confirmation.png"));
+        Click(serviceUi, "toggle"); serviceUi.Close();
+        Check(serviceUi.OwnedWindows.Count(w => w.Name == "ConfirmationDialog" && w.IsVisible) == 1, "repeated stop and close requests share one confirmation");
+        Answer(confirmation, "Cancel"); await Wait(() => !confirmation.IsVisible);
+        Check(serviceUi.IsVisible && client.Connected && ReferenceEquals(service, Field<ChatServer>(serviceUi, "server")) && HistoryCount(service) == history, "cancel keeps the service, window, client and history");
+        Click(serviceUi, "toggle"); confirmation = await Confirmation(serviceUi); Answer(confirmation, "Confirm");
+        await Wait(() => Field<ChatServer?>(serviceUi, "server") == null && !client.Connected);
+        Check(serviceUi.IsVisible && HistoryCount(service) == 0, "confirmed stop clears history without closing the service window");
+        Check(Equals(Field<Button>(serviceUi, "toggle").Content, "启动服务") && !Field<Button>(serviceUi, "copy").IsEnabled
+            && Field<ComboBox>(serviceUi, "address").IsEnabled && Field<TextBox>(serviceUi, "port").IsEnabled && Field<TextBox>(serviceUi, "code").IsEnabled, "confirmed stop restores idle controls");
+        Click(serviceUi, "toggle"); service = Field<ChatServer>(serviceUi, "server");
+        using var restartedClient = new ChatConnection();
+        await restartedClient.ConnectAsync("127.0.0.1", port, "重启测试", Field<TextBox>(serviceUi, "code").Text!, service.Fingerprint);
+        serviceUi.Close(); confirmation = await Confirmation(serviceUi);
+        Check(((TextBlock)((StackPanel)confirmation.Content!).Children[0]).Text == stopMessage, "window close and stop button use the same warning after restart");
+        Answer(confirmation, "Cancel"); await Wait(() => !confirmation.IsVisible);
+        Check(serviceUi.IsVisible && restartedClient.Connected, "cancelled window close keeps the restarted service connected");
+        serviceUi.Close(); confirmation = await Confirmation(serviceUi); Answer(confirmation, "Confirm");
+        await Wait(() => !serviceUi.IsVisible && !restartedClient.Connected);
+        Check(HistoryCount(service) == 0, "confirmed window close still shuts down the service and clears history");
+        var idleUi = new ServerWindow(); idleUi.Show(); idleUi.Close();
+        Check(!idleUi.IsVisible && !idleUi.OwnedWindows.Any(w => w.IsVisible), "idle server window closes without a confirmation");
         // The assistant joins through whichever address the window binds, so a LAN deployment keeps working.
         // Binding to a non-loopback address is what makes that wiring observable: a hardcoded loopback dial
         // would leave the room empty forever while the status line still claimed the assistant had joined.
@@ -190,8 +228,16 @@ internal static class DesktopSmokeTests
             // The old defect was invisible precisely because the window reported success either way.
             await Wait(() => (Field<TextBlock>(lanUi, "status").Text ?? "").Contains("助手：已加入房间"));
             Capture(lanUi, Path.Combine(store.Root, "server-lan.png"));
-            Click(lanUi, "toggle"); lanUi.Close();
+            var agent = Field<AgentBridge>(lanUi, "bridge");
+            Click(lanUi, "toggle"); confirmation = await Confirmation(lanUi); Answer(confirmation, "Cancel");
+            await Wait(() => !confirmation.IsVisible);
+            Check(ReferenceEquals(agent, Field<AgentBridge>(lanUi, "bridge")) && lanService.Online == 1, "cancelled stop leaves the assistant connected");
+            Click(lanUi, "toggle"); confirmation = await Confirmation(lanUi); Answer(confirmation, "Confirm");
+            await Wait(() => Field<ChatServer?>(lanUi, "server") == null && Field<AgentBridge?>(lanUi, "bridge") == null && lanService.Online == 0);
+            lanUi.Close();
         }
+        File.WriteAllText(Path.Combine(store.Root, "server-stop-confirmation-smoke.ok"), "Stop button and window close share the emoticon warning; duplicate requests, cancel, confirm, preserved history, idle controls and restart passed."
+            + (lan == null ? " Assistant check skipped: no LAN address." : " Assistant cancellation/stop passed."));
         File.WriteAllText(Path.Combine(store.Root, "shell-chat-smoke.ok"), "Home lifecycle, independent close, TLS UI send/receive, global hide/restore, reconnect, cache cleanup, server window, assistant on a LAN bind passed.");
         library.RestoreLibrary();
     }
