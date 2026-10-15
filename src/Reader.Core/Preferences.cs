@@ -21,6 +21,9 @@ namespace Reader.Core;
         public string ReadingThemeId = "";
         public int ChatPort = 38417;
         public bool TopMost = true, Stealth = true, ClickThrough, UiDark;
+        // 主页窗口关闭时的行为。未选择时，第一次关闭先询问，之后按记住的选择执行。
+        public const int ExitUnset = 0, ExitToTray = 1, ExitProgram = 2;
+        public int ExitMode = ExitUnset;
         public void UsePreset(int theme)
         {
             ReadingThemeId = ""; Theme = theme; FontSize = theme == 5 ? 10 : 11; Opacity = 100; Stealth = true;

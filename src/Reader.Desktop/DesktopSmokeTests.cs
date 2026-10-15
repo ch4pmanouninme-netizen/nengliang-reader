@@ -64,7 +64,23 @@ internal static class DesktopSmokeTests
         chat.Close(); await Wait(() => restart.Online == 0);
         Check(Field<TextBox>(chat, "transcript").Text is null or "" && Field<TextBox>(chat, "code").Text is null or "", "closing clears cache and secret");
         Check(!home.IsVisible, "closing chat preserves hidden home");
-        home.Restore(); Capture(home, Path.Combine(store.Root, "home.png")); home.Close(); Check(!home.IsVisible, "home close hides rather than exits");
+        home.Restore(); Capture(home, Path.Combine(store.Root, "home.png"));
+        // First close with no exit choice: closing asks once, choosing tray remembers and hides.
+        home.Close(); await Wait(() => lifetime.Windows.Any(window => window.Name == "ExitModeDialog"));
+        var exitDialog = lifetime.Windows.Single(window => window.Name == "ExitModeDialog");
+        Check(store.Pref.ExitMode == Preferences.ExitUnset, "first close asks because no exit choice was saved");
+        exitDialog.GetVisualDescendants().OfType<Button>().Single(item => item.Name == "ExitToTray").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Wait(() => !home.IsVisible && lifetime.Windows.All(window => window.Name != "ExitModeDialog"));
+        Check(store.Pref.ExitMode == Preferences.ExitToTray, "choosing tray remembers the choice");
+        // The settings window owns the same choice, so it can change what the next close does.
+        home.Restore(); _ = home.OpenSettings();
+        await Wait(() => lifetime.Windows.Any(window => window.Name == "HomeSettingsDialog"));
+        var settingsDialog = lifetime.Windows.Single(window => window.Name == "HomeSettingsDialog");
+        Check(settingsDialog.GetVisualDescendants().OfType<Button>().Any(item => item.Content?.ToString() == "切换主题"), "settings window offers theme switching");
+        settingsDialog.GetVisualDescendants().OfType<RadioButton>().Single(item => item.Name == "ExitProgram").IsChecked = true;
+        settingsDialog.GetVisualDescendants().OfType<Button>().Single(item => item.Name == "SaveHomeSettings").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Wait(() => store.Pref.ExitMode == Preferences.ExitProgram && lifetime.Windows.All(window => window.Name != "HomeSettingsDialog"));
+        Check(home.IsVisible, "settings window closes after saving the quit choice");
         home.Restore(); home.PickChat();
         await Wait(() => lifetime.Windows.Any(window => window.Name == "ChatModeDialog"));
         modeDialog = lifetime.Windows.Single(window => window.Name == "ChatModeDialog");

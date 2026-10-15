@@ -22,16 +22,62 @@ internal sealed class HomeWindow : Window
         this.store = store; this.library = library;
         Title = "良子小窗"; Width = 480; Height = 360; MinWidth = 420; MinHeight = 300;
         var panel = new StackPanel { Margin = new Thickness(30), Spacing = 14 };
-        panel.Children.Add(UiThemes.Header(new TextBlock { Text = "良子小窗", FontSize = 28 }));
+        panel.Children.Add(UiThemes.Header(BuildHeader()));
         panel.Children.Add(new TextBlock { Text = "阅读与加密聊天，各自打开，随时回到主页。", TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(UiActions.Row(UiActions.Button("阅读", library.RestoreLibrary), UiActions.Button("聊天", PickChat)));
-        panel.Children.Add(UiThemes.CreatePicker(store.Pref, () => { library.SavePreferences(); ApplyTheme(); }));
-        panel.Children.Add(new TextBlock { Text = "关闭主页会收进托盘。聊天窗口关闭后断开，隐藏时保持连接。", TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(UiActions.Button("退出良子小窗", library.RequestExit)); Content = panel;
+        panel.Children.Add(new TextBlock { Text = "关闭主页会收进托盘或退出，可在设置中选择。聊天窗口关闭后断开，隐藏时保持连接。", TextWrapping = TextWrapping.Wrap });
+        Content = panel;
         library.ShowHome = Restore; library.HideAll = ToggleVisibility; library.ThemeChanged = ApplyTheme;
-        Closing += (_, e) => { if (!exiting) { e.Cancel = true; Hide(); } };
-        KeyDown += (_, e) => { if (e.Key == Key.Escape) Hide(); };
+        Closing += async (_, e) => { if (!exiting && IsVisible) { e.Cancel = true; await HandleClose(); } };
+        KeyDown += (_, e) => { if (e.Key == Key.Escape) _ = HandleClose(); };
         ApplyTheme();
+    }
+    private StackPanel BuildHeader()
+    {
+        var caption = new TextBlock { Text = "良子小窗", FontSize = 28 };
+        var settings = new Button { Name = "HomeSettings", Content = "设置", HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+        settings.Click += async (_, _) => await OpenSettings();
+        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        Grid.SetColumn(caption, 0); Grid.SetColumn(settings, 1);
+        header.Children.Add(caption); header.Children.Add(settings);
+        return new StackPanel { Children = { header } };
+    }
+    internal async Task OpenSettings()
+    {
+        if (await new HomeSettingsWindow(store.Pref).ShowDialog<bool>(this))
+        {
+            library.SavePreferences();
+            ApplyTheme();
+        }
+    }
+    // 关闭主页：按用户选择收进托盘或退出程序；尚未选择时询问一次并记住。
+    internal async Task HandleClose()
+    {
+        if (store.Pref.ExitMode == Preferences.ExitUnset)
+        {
+            var tray = new Button { Name = "ExitToTray", Content = "最小化到托盘", IsDefault = true };
+            var quit = new Button { Name = "ExitProgram", Content = "完全退出程序" };
+            var cancel = new Button { Name = "CancelExit", Content = "取消", IsCancel = true };
+            var ask = new Window
+            {
+                Name = "ExitModeDialog", Title = "关闭良子小窗", Width = 380, SizeToContent = SizeToContent.Height,
+                MinHeight = 160, CanResize = false, WindowStartupLocation = WindowStartupLocation.CenterOwner, ShowInTaskbar = false
+            };
+            int? answer = null;
+            tray.Click += (_, _) => { answer = Preferences.ExitToTray; ask.Close(); };
+            quit.Click += (_, _) => { answer = Preferences.ExitProgram; ask.Close(); };
+            cancel.Click += (_, _) => ask.Close();
+            ask.Content = new StackPanel { Margin = new Thickness(24), Spacing = 14, Children = {
+                new TextBlock { Text = "关闭主页时要最小化到托盘，还是完全退出程序？选择会被记住，之后可在设置中修改。", TextWrapping = TextWrapping.Wrap },
+                new StackPanel { Orientation = Orientation.Vertical, Spacing = 10, Children = { tray, quit } },
+                cancel } };
+            await ask.ShowDialog<bool?>(this);
+            if (answer == null) return;
+            store.Pref.ExitMode = answer.Value;
+            library.SavePreferences();
+        }
+        if (store.Pref.ExitMode == Preferences.ExitProgram) library.RequestExit();
+        else Hide();
     }
     public void Restore() { Show(); WindowState = WindowState.Normal; Activate(); }
     internal void OpenChat()
