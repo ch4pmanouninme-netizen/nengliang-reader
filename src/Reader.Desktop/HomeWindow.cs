@@ -44,8 +44,10 @@ internal sealed class HomeWindow : Window
             HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center,
             Cursor = new Cursor(StandardCursorType.Hand)
         };
+        
         caption.Click += async (_, _) => await OpenAbout();
         // 标题长得不像按钮，悬停给个下划线，否则没人知道它能点。
+        
         caption.PointerEntered += (_, _) => captionText.TextDecorations = TextDecorations.Underline;
         caption.PointerExited += (_, _) => captionText.TextDecorations = null;
         var settings = new Button { Name = "HomeSettings", Content = "设置", HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };

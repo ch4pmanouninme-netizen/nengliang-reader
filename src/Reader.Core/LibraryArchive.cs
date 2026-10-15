@@ -32,6 +32,7 @@ public static class LibraryArchive
             }
             File.Move(temporary, destination, true);
         }
+        
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 
