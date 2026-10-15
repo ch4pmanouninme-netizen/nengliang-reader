@@ -9,7 +9,8 @@ internal sealed class SettingsWindow : Window
 {
     public SettingsWindow(Preferences preferences)
     {
-        Title = "阅读设置"; Width = 470; Height = 610; MinWidth = 400; MinHeight = 400;
+        Title = "阅读设置"; Icon = AppIcon.Shared;
+        Width = 470; Height = 610; MinWidth = 400; MinHeight = 400;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var rows = new StackPanel { Margin = new Thickness(24), Spacing = 12 };
         string[] legacyThemes = { "浅色", "柔和深灰", "暖纸", "灰色", "企业微信浅色", "IDEA / PyCharm Darcula 风格", "透明文字", "VS Code Dark+ 风格", "One Dark 蓝灰", "柔和午夜蓝", "VS Code · 2026 深色", "PyCharm · 新版 Dark" };

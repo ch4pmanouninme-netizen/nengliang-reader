@@ -28,7 +28,8 @@ internal sealed class GroupWindow : Window
     {
         Name = "GroupDialog";
         this.store = store;
-        Title = "管理分组"; Width = 460; SizeToContent = SizeToContent.Height; MinHeight = 320; MaxHeight = 650;
+        Title = "管理分组"; Icon = AppIcon.Shared;
+        Width = 460; SizeToContent = SizeToContent.Height; MinHeight = 320; MaxHeight = 650;
         CanResize = false; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var rows = new StackPanel { Margin = new Thickness(24), Spacing = 8 };
         rows.Children.Add(new TextBlock { Text = "分组按这里的顺序显示在下拉框里；空分组也会保留。删除分组只把它下面的书移回未分组，不会删书。", TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = Brushes.Gray });

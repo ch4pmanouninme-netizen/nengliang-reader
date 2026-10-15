@@ -42,7 +42,8 @@ internal sealed partial class MainWindow : Window
     public MainWindow(Store store)
     {
         this.store = store;
-        Title = "良子阅读器"; Width = 780; Height = 500; MinWidth = 600; MinHeight = 380;
+        Title = "良子阅读器"; Icon = AppIcon.Shared;
+        Width = 780; Height = 500; MinWidth = 600; MinHeight = 380;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         var root = new DockPanel { Margin = new Thickness(24), LastChildFill = true };
         var header = new StackPanel { Spacing = 6, Margin = new Thickness(0, 0, 0, 20) };

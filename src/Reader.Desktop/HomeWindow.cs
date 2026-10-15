@@ -20,7 +20,8 @@ internal sealed class HomeWindow : Window
     public HomeWindow(Store store, MainWindow library)
     {
         this.store = store; this.library = library;
-        Title = "良子小窗"; Width = 480; MinWidth = 420; SizeToContent = SizeToContent.Height; CanResize = false;
+        Title = "良子小窗"; Icon = AppIcon.Shared;
+        Width = 480; MinWidth = 420; SizeToContent = SizeToContent.Height; CanResize = false;
         var panel = new StackPanel { Margin = new Thickness(30), Spacing = 14 };
         panel.Children.Add(UiThemes.Header(BuildHeader()));
         panel.Children.Add(new TextBlock { Text = "阅读与加密聊天，各自打开，随时回到主页。", TextWrapping = TextWrapping.Wrap });
@@ -34,7 +35,19 @@ internal sealed class HomeWindow : Window
     }
     private StackPanel BuildHeader()
     {
-        var caption = new TextBlock { Text = "良子小窗", FontSize = 28 };
+        // 标题本身就是「关于」的入口：做成无边框按钮，外观仍是标题，但可点、有手型和键盘焦点。
+        var captionText = new TextBlock { Name = "AboutTitle", Text = "良子小窗", FontSize = 28 };
+        var caption = new Button
+        {
+            Name = "AboutLink", Content = captionText, Padding = new Thickness(0),
+            BorderThickness = new Thickness(0), Background = Brushes.Transparent,
+            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center,
+            Cursor = new Cursor(StandardCursorType.Hand)
+        };
+        caption.Click += async (_, _) => await OpenAbout();
+        // 标题长得不像按钮，悬停给个下划线，否则没人知道它能点。
+        caption.PointerEntered += (_, _) => captionText.TextDecorations = TextDecorations.Underline;
+        caption.PointerExited += (_, _) => captionText.TextDecorations = null;
         var settings = new Button { Name = "HomeSettings", Content = "设置", HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
         settings.Click += async (_, _) => await OpenSettings();
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
@@ -42,6 +55,8 @@ internal sealed class HomeWindow : Window
         header.Children.Add(caption); header.Children.Add(settings);
         return new StackPanel { Children = { header } };
     }
+    internal async Task OpenAbout() => await new AboutWindow().ShowDialog(this);
+
     internal async Task OpenSettings()
     {
         if (await new HomeSettingsWindow(store.Pref).ShowDialog<bool>(this))

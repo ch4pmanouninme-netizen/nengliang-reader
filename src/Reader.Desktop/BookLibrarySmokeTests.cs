@@ -82,7 +82,7 @@ internal sealed partial class MainWindow
         var batchA = store.Add("批量甲", "批量操作的甲。", "TXT");
         var batchB = store.Add("批量乙", "批量操作的乙。", "TXT");
         busy = true; RefreshBooks(active.Id, true); busy = false; await SelectBook(active);
-        books.SelectedItems.Add(batchA); books.SelectedItems.Add(batchB);
+        books.SelectedItems!.Add(batchA); books.SelectedItems.Add(batchB);
         await Task.Delay(150);
         Check(books.SelectedItems.Count == 3 && session?.Book == active, "selecting several books leaves the reading session on the current book");
         await store.CreateGroupAsync("批量组");

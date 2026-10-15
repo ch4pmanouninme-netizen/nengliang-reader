@@ -44,6 +44,6 @@ internal static class Dialogs
         return await window.ShowDialog<bool>(owner);
     }
 
-    private static Window Base(string title) => new() { Title = title, Width = 500, SizeToContent = SizeToContent.Height,
+    private static Window Base(string title) => new() { Title = title, Icon = AppIcon.Shared, Width = 500, SizeToContent = SizeToContent.Height,
         MinHeight = 180, MaxHeight = 650, CanResize = false, WindowStartupLocation = WindowStartupLocation.CenterOwner };
 }

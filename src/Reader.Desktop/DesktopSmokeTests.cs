@@ -90,6 +90,22 @@ internal static class DesktopSmokeTests
         settingsDialog.GetVisualDescendants().OfType<Button>().Single(item => item.Name == "SaveHomeSettings").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         await Wait(() => store.Pref.ExitMode == Preferences.ExitProgram && lifetime.Windows.All(window => window.Name != "HomeSettingsDialog"));
         Check(home.IsVisible, "settings window closes after saving the quit choice");
+        // 「关于」的入口就是主页标题本身，不是另一个按钮。
+        var titleLink = home.GetVisualDescendants().OfType<Button>().Single(item => item.Name == "AboutLink");
+        Check((titleLink.Content as TextBlock)?.Text == "良子小窗", "the home title doubles as the about entry");
+        home.Restore(); _ = home.OpenAbout();
+        await Wait(() => lifetime.Windows.Any(window => window.Name == "AboutDialog"));
+        var about = lifetime.Windows.Single(window => window.Name == "AboutDialog");
+        TextBlock AboutText(string name) => about.GetVisualDescendants().OfType<TextBlock>().Single(block => block.Name == name);
+        Check(AboutText("AboutName").Text == "良子小窗", "the about window names the product");
+        Check(AboutText("AboutVersion").Text == "版本 " + AppInfo.Version && AppInfo.Version.Length > 0, "the about window shows the running version");
+        Check(about.GetVisualDescendants().OfType<Image>().Any(), "the about window shows the application icon");
+        Check(about.GetVisualDescendants().OfType<SelectableTextBlock>().Single(block => block.Name == "AboutSource").Text
+            == "https://github.com/ch4pmanouninme-netizen/nengliang-reader/", "the about window shows the project address");
+        await Task.Delay(200);
+        Capture(about, Path.Combine(store.Root, "about.png"));
+        about.GetVisualDescendants().OfType<Button>().Single(item => item.Name == "CloseAbout").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Wait(() => lifetime.Windows.All(window => window.Name != "AboutDialog"));
         home.Restore(); home.PickChat();
         await Wait(() => lifetime.Windows.Any(window => window.Name == "ChatModeDialog"));
         modeDialog = lifetime.Windows.Single(window => window.Name == "ChatModeDialog");

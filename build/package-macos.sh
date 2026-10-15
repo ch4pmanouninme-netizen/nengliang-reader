@@ -10,11 +10,28 @@ dotnet publish src/Reader.Desktop/Reader.Desktop.csproj -c Release -r "$rid" --s
 chmod +x "$app/Contents/MacOS/NengliangReader"
 cp README.md LICENSE CHANGELOG.md CONTRIBUTING.md "$app/Contents/Resources/"
 cp -R docs "$app/Contents/Resources/"
+
+# 应用图标：从 build/make-icon.py 生成的同一张 PNG 现场做 .icns（iconutil 只在 macOS 上有）。
+# 母图是 512，所以 iconset 不生成 512@2x(1024)，macOS 会退用现有的最大尺寸。
+icon_source="src/Reader.Desktop/Assets/icon.png"
+[[ -f "$icon_source" ]] || { echo "Missing $icon_source" >&2; exit 1; }
+iconset="$(mktemp -d "${TMPDIR:-/tmp}/nengliang-icns.XXXXXX")/AppIcon.iconset"
+mkdir -p "$iconset"
+for size in 16 32 128 256 512; do
+  sips -z $size $size "$icon_source" --out "$iconset/icon_${size}x${size}.png" >/dev/null
+done
+for size in 16 32 128 256; do
+  sips -z $((size * 2)) $((size * 2)) "$icon_source" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "$iconset" -o "$app/Contents/Resources/AppIcon.icns"
+rm -rf -- "$(dirname "$iconset")"
+
 cat > "$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>com.hyacinth.nengliangreader</string>
 <key>CFBundleName</key><string>良子小窗</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
 <key>NSLocalNetworkUsageDescription</key><string>用于连接或主持您指定的局域网聊天房间。</string>
 <key>CFBundleExecutable</key><string>NengliangReader</string>
 <key>CFBundlePackageType</key><string>APPL</string>

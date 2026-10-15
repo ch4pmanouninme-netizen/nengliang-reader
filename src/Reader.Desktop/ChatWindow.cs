@@ -38,7 +38,8 @@ internal sealed class ChatWindow : Window
     public ChatWindow(Store store, Action save, Action home)
     {
         this.store = store; this.save = save;
-        Title = "良子小窗 · 聊天"; Width = 640; Height = 680; MinWidth = 0; MinHeight = 0; CanResize = true;
+        Title = "良子小窗 · 聊天"; Icon = AppIcon.Shared;
+        Width = 640; Height = 680; MinWidth = 0; MinHeight = 0; CanResize = true;
         host.Text = store.Pref.ChatHost; nick.Text = store.Pref.ChatNick; port.Text = store.Pref.ChatPort.ToString();
         var top = new StackPanel { Spacing = 8 };
         var navigation = new WrapPanel { Orientation = Orientation.Horizontal };

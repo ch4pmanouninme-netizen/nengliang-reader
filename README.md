@@ -10,7 +10,7 @@
 
 v2.2.0 新增： VS Code 的 19 个与 JetBrains 的 8 个官方内置主题，按软件分组选择；阅读条也可独立选择这 27 套主题。选择自动保存，并保留原有自定义配色及旧配置兼容。来源、完整清单与映射范围见 [官方主题配色](docs/EDITOR-THEMES.md)。
 
-- **统一主页**：阅读和聊天独立开关，右上角「设置」调整主题色与关闭主页的行为（收进托盘或退出程序）。首次关闭主页会先询问并记住选择，其后可在设置中修改。
+- **统一主页**：阅读和聊天独立开关，右上角「设置」调整主题色与关闭主页的行为（收进托盘或退出程序）。首次关闭主页会先询问并记住选择，其后可在设置中修改；点标题「良子小窗」查看关于（图标、版本与开源地址，地址可选中复制）。
 - **加密聊天**：兼容上游 v1.5 协议，TLS 1.2、SHA-256 指纹校验、限流、有界缓存、自动重连。
 - **独立服务**：Windows/macOS 均能启动聊天服务，客户端退出不影响独立服务。
 - **本机部署**：仓库 `scripts/` 在桌面生成「启动 / 停止 / 更新」三个入口，代码固定装在本机一处，更新只需拉代码重启；详见 [团队内部部署](scripts/README.md)。
@@ -188,13 +188,13 @@ Windows：`pwsh ./build/package-windows.ps1`。Mac：`bash build/package-macos.s
 ```text
 src/Reader.Core/               导入、阅读会话、存储、下载与书库备份
 src/Reader.Chat/               v1.5 兼容协议、TLS、服务与客户端连接
-src/Reader.Desktop/            Avalonia 界面与交互
+src/Reader.Desktop/            Avalonia 界面与交互（Assets/ 放应用图标）
 src/Reader.Platform.Windows/   Windows 热键和鼠标穿透
 src/Reader.Platform.Mac/       macOS 热键和鼠标穿透
 tests/Reader.Core.Tests/       跨平台回归测试
 tests/Reader.Chat.Tests/       TLS、协议边界与上游互通测试
 scripts/                       启动 / 停止 / 更新脚本（团队内部部署）
-build/                        安装包与签名脚本
+build/                        安装包与签名脚本，以及图标生成器 make-icon.py
 docs/                         实施范围、验证与发布说明
 legacy/                       历史 Windows Forms 源码，含 v1.5.2 快照
 ```
