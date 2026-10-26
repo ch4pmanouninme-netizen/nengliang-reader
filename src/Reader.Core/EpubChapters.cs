@@ -174,7 +174,7 @@ internal static class EpubChapters
     private static string CleanTitle(string value)
     {
         string clean = Regex.Replace(value ?? "", @"\s+", " ").Trim();
-        return clean.Length > 100 ? clean[..100] : clean;
+        return Importer.TruncateText(clean, 100);
     }
 
     /// <summary>在章节正文里找以标题开头的行；返回相对章节起点的字符偏移。</summary>

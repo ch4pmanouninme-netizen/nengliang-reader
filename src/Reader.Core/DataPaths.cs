@@ -28,7 +28,7 @@ public static class DataPaths
         string books = Path.Combine(source, "books");
         if (Directory.Exists(books))
             foreach (string file in Directory.EnumerateFiles(books, "*.txt"))
-                if (System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(file), "^[a-f0-9]{64}\\.txt$"))
+                if (Store.IsBookId(Path.GetFileNameWithoutExtension(file)))
                     File.Copy(file, Path.Combine(destination, "books", Path.GetFileName(file)), true);
         File.Copy(state, Path.Combine(destination, "state.legacy-backup.xml"), true);
         if (File.Exists(state + ".bak")) File.Copy(state + ".bak", Path.Combine(destination, "state.xml.bak"), true);

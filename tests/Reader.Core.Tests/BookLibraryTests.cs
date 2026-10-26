@@ -1,4 +1,5 @@
 using Reader.Core;
+using System.Text;
 using System.Xml.Linq;
 
 namespace Reader.Core.Tests;
@@ -38,6 +39,9 @@ internal static class BookLibraryTests
         Check(new Store(root).GroupNames.Contains("空分组"), "an empty group survives a restart");
         Check(await store.CreateGroupAsync("空分组") is { Length: > 0 } repeatReason, "a duplicate group name is refused with a reason");
         Check(await store.CreateGroupAsync("未分组") is { Length: > 0 } reservedReason, "a reserved group name is refused");
+        Check(await store.CreateGroupAsync("   ") is { Length: > 0 }, "an empty group name is refused with a reason");
+        Check(await store.RenameGroupAsync("空分组", "   ") is { Length: > 0 }, "renaming a group to an empty name is refused");
+        Check(store.GroupNames.Contains("空分组"), "a refused empty rename keeps the original group");
 
         await store.MoveGroupAsync("空分组", -1);
         Check(store.GroupNames.SequenceEqual(new[] { "小说 & 阅读", "空分组", "Test" }), "moving a group swaps it with its neighbour");
@@ -84,8 +88,15 @@ internal static class BookLibraryTests
         Check(new Store(root).Books.All(book => book.Id != first.Id && book.Id != second.Id), "deleted books stay removed after restart");
         await store.RemoveBookAsync(third);
         Check(store.Books.Count == 0 && store.LastId == "" && new Store(root).Books.Count == 0, "deleting final book persists an empty library");
+        var repair = new Store(Path.Combine(root, "repair"));
+        var repaired = repair.Add("修复", "完整正文内容", "TXT");
+        string repairedPath = Path.Combine(repair.Root, "books", repaired.Id + ".txt");
+        File.WriteAllText(repairedPath, "半截", new UTF8Encoding(false));
+        repair.Add("修复", "完整正文内容", "TXT");
+        Check(File.ReadAllText(repairedPath, Encoding.UTF8) == "完整正文内容" && !File.Exists(repairedPath + ".tmp"), "a truncated cached text is repaired on re-import");
+        File.WriteAllText(Path.Combine(root, "books", "notes.txt"), "杂项");
         File.WriteAllText(Path.Combine(root, "state.xml"), "damaged");
-        Check(new Store(root).Books.Count == 0, "backup recovery cannot resurrect deleted cached books");
+        Check(new Store(root).Books.Count == 0, "backup recovery ignores non-book txt files");
 
         var legacy = new Store(Path.Combine(root, "legacy")); var legacyBook = legacy.Add("旧书", "旧版兼容", "TXT"); legacy.Save();
         string statePath = Path.Combine(legacy.Root, "state.xml"); var state = XDocument.Load(statePath);

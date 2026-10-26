@@ -198,6 +198,8 @@ try
         if (OperatingSystem.IsWindows()) Check(written.Contains("protected=\"true\"") && !written.Contains("test-key"), "agent API key is DPAPI-protected and never written in plaintext");
         else Check(written.Contains("protected=\"false\""), "outside Windows the agent key is stored unprotected and marked as such");
         Check(AgentConfig.Load(Path.Combine(agentRoot, "absent.xml")) == null, "missing agent settings load as null instead of throwing");
+        File.WriteAllText(configPath, "<agent version='1'><endpoint>https://example.test/v1</endpoint><apiKey protected='true'>not-base64!</apiKey></agent>", Encoding.UTF8);
+        Check(AgentConfig.Load(configPath) == null, "malformed protected agent key loads as null");
     }
     finally { try { Directory.Delete(agentRoot, true); } catch (IOException) { } }
 

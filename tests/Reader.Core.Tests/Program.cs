@@ -14,6 +14,7 @@ try
     await LargeEpub();
     Chapters();
     EpubToc();
+    TruncatedEdge();
     // A library of its own, so the derived pipe name cannot collide with an installed copy of the
     // reader running on the same machine.
     string controlRoot = Path.Combine(root, "control");
@@ -182,6 +183,29 @@ static void Chapters()
     Check(ChapterIndex.Find("第3章 请假一天，顺便小聊几句。\n正文\n第4章 归来").Select(chapter => chapter.Title).SequenceEqual(new[] { "第3章 请假一天，顺便小聊几句。", "第4章 归来" }), "a title ending with a period is kept when the heading has a separator");
     Check(ChapterIndex.Find("第一章 开始\n正文\n第一章的内容很精彩。\n第二章 续").Select(chapter => chapter.Title).SequenceEqual(new[] { "第一章 开始", "第二章 续" }), "chapter-like sentences are not headings");
     Check(ChapterIndex.Find("只有正文\n没有任何章节标题").Count == 0, "a book without headings has no chapter index");
+}
+
+static void TruncatedEdge()
+{
+    string root = Path.Combine(Path.GetTempPath(), "epub-edge-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    try
+    {
+        string path = Path.Combine(root, "edge.epub");
+        using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
+        {
+            void Entry(string name, string body) { using var writer = new StreamWriter(zip.CreateEntry(name).Open(), new UTF8Encoding(false)); writer.Write(body); }
+            Entry("META-INF/container.xml", "<container><rootfile full-path='content.opf'/></container>");
+            Entry("content.opf", "<package><metadata><title>边界</title></metadata><manifest><item id='a' href='a.xhtml' media-type='application/xhtml+xml'/></manifest><spine><itemref idref='a'/></spine></package>");
+            // 79 个 ASCII 字符后紧跟一个 emoji（UTF-16 代理对）；80 字符截断正好会切成半个。
+            Entry("a.xhtml", "<html><body><p>" + new string('a', 79) + "😊tail</p></body></html>");
+        }
+        var book = Importer.Read(path);
+        Check(book.Chapters != null && book.Chapters.Count == 1, "surrogate edge fixture yields one chapter");
+        string title = book.Chapters[0].Title;
+        Check(title.Length == 79 && !Char.IsHighSurrogate(title[^1]), "truncated chapter title never ends on a lone high surrogate");
+    }
+    finally { Directory.Delete(root, true); }
 }
 
 static void EpubToc()

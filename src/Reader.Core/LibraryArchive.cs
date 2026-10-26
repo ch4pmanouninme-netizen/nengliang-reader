@@ -80,7 +80,7 @@ public static class LibraryArchive
             foreach (var entry in index.Elements("book"))
             {
                 string id = (string)entry.Attribute("id") ?? "";
-                if (!Regex.IsMatch(id, "^[a-f0-9]{64}$") || !ids.Add(id) || !File.Exists(Path.Combine(staging, "books", id + ".txt")))
+                if (!Store.IsBookId(id) || !ids.Add(id) || !File.Exists(Path.Combine(staging, "books", id + ".txt")))
                     throw new InvalidDataException("备份存在缺失、重复或无效的书籍。未导入任何书籍。");
             }
             // Validate all texts before changing the destination library.
@@ -102,8 +102,9 @@ public static class LibraryArchive
             }
             // 分组清单也要跟着合并。只带入至少有一本书引用到的分组：空分组不跨库导入，
             // 与上面“逐本合并、重复书保留目的地组织”的语义保持一致。顺序沿用备份里的清单顺序。
+            // 只登记目的地书库里确实有书引用的分组；备份里的重复书已被跳过，不能再算数。
             store.RegisterGroups(restored.GroupNames.Where(name =>
-                imported.Any(item => string.Equals(item.Book.Group, name, StringComparison.OrdinalIgnoreCase))));
+                store.Books.Any(book => string.Equals(book.Group, name, StringComparison.OrdinalIgnoreCase))));
             store.Save(); return added;
         }
         finally { Directory.Delete(staging, true); }

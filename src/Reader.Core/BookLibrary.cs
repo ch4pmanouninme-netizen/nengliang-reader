@@ -64,6 +64,7 @@ public sealed partial class Store
     public Task<string?> CreateGroupAsync(string? name) => Guard(() => MutateLibraryAsync(() =>
     {
         string normalized = NormalizeGroup(name);
+        if (normalized.Length == 0) throw new ArgumentException("分组名称不能为空。");
         if (IndexOf(normalized) >= 0) throw new ArgumentException($"已存在分组“{normalized}”。");
         groups.Add(normalized);
         return (string?)null;
@@ -74,6 +75,7 @@ public sealed partial class Store
         int index = IndexOf(from);
         if (index < 0) throw new ArgumentException("这个分组已不存在，请刷新后重试。");
         string normalized = NormalizeGroup(to);
+        if (normalized.Length == 0) throw new ArgumentException("分组名称不能为空。");
         int existing = IndexOf(normalized);
         // 撞名拒绝而不是合并：合并会不可逆地把两个分组混在一起。
         if (existing >= 0 && existing != index) throw new ArgumentException($"已存在分组“{normalized}”。");
@@ -160,8 +162,9 @@ public sealed partial class Store
             await Task.Run(() => WriteSnapshot(snapshot)); committed = true;
             if (staged != null)
             {
+                // 索引已经提交；清理失败只意味着下次启动还要再删一次，不能把删除报成失败。
                 try { File.Delete(staged); }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
             }
             // 章节索引是附属文件；删除失败不影响书籍移除，下次同名导入会重新生成。
             try { File.Delete(Path.Combine(Root, "books", book.Id + ".chapters.tsv")); }
@@ -184,7 +187,7 @@ public sealed partial class Store
     private int RequireBook(Book book)
     {
         int index = Books.IndexOf(book);
-        if (index < 0 || !Regex.IsMatch(book.Id, "^[a-f0-9]{64}$")) throw new InvalidOperationException("这本书已不在当前书库中，请刷新后重试。");
+        if (index < 0 || !IsBookId(book.Id)) throw new InvalidOperationException("这本书已不在当前书库中，请刷新后重试。");
         return index;
     }
 

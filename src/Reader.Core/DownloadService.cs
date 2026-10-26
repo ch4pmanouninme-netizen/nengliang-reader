@@ -89,7 +89,12 @@ public sealed class DownloadService : IDisposable
         {
             throw new TimeoutException("下载超过 5 分钟，请重试。");
         }
-        finally { Directory.Delete(temporary, true); }
+        finally
+        {
+            // 清理失败不能掩盖真正的下载结果（成功或失败都一样）。
+            try { Directory.Delete(temporary, true); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
     }
 
     private static bool Allowed(Uri uri) => (uri.Scheme == "http" || uri.Scheme == "https") && string.IsNullOrEmpty(uri.UserInfo);

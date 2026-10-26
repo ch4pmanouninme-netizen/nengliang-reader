@@ -270,7 +270,11 @@ namespace Reader.Chat
             }
             catch (Exception ex)
             {
-                if (!(ex is XmlException || ex is IOException || ex is InvalidDataException || ex is ArgumentException || ex is CryptographicException || ex is UnauthorizedAccessException)) throw;
+                // FormatException：损坏的 base64 密钥；DllNotFoundException / PlatformNotSupportedException：
+                // 在非 Windows 上读到 protected="true" 的 DPAPI 密钥。都应当降级为“没有可用配置”。
+                if (!(ex is XmlException || ex is IOException || ex is InvalidDataException || ex is ArgumentException
+                    || ex is CryptographicException || ex is UnauthorizedAccessException
+                    || ex is FormatException || ex is DllNotFoundException || ex is PlatformNotSupportedException)) throw;
                 return null;
             }
         }

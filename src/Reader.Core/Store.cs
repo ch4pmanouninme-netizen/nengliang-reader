@@ -46,8 +46,10 @@ namespace Reader.Core;
                 Books.Clear();
                 foreach (string file in Directory.GetFiles(Path.Combine(root, "books"), "*.txt"))
                 {
+                    string id = Path.GetFileNameWithoutExtension(file);
+                    if (!IsBookId(id)) continue;
                     string content = File.ReadAllText(file, Encoding.UTF8);
-                    Books.Add(new Book { Id = Path.GetFileNameWithoutExtension(file), Title = "恢复的书籍 " + (Books.Count + 1), Format = "TXT", Length = content.Length });
+                    Books.Add(new Book { Id = id, Title = "恢复的书籍 " + (Books.Count + 1), Format = "TXT", Length = content.Length });
                 }
                 RecoveryNotice = "进度文件损坏，已保留原文件并恢复本地书籍；阅读位置需要重新选择。";
                 File.Copy(state, Path.Combine(root, "state.damaged-" + DateTime.Now.ToString("yyyyMMddHHmmss") + ".xml"), true);
@@ -62,7 +64,7 @@ namespace Reader.Core;
             foreach (XElement b in root.Elements("book"))
             {
                 string id = (string)b.Attribute("id") ?? "";
-                if (!Regex.IsMatch(id, "^[a-f0-9]{64}$")) continue;
+                if (!IsBookId(id)) continue;
                 if (!File.Exists(Path.Combine(Root, "books", id + ".txt"))) continue;
                 loaded.Add(new Book { Id = id, Title = (string)b.Attribute("title") ?? "未命名", Format = (string)b.Attribute("format") ?? "TXT", Position = Number(b, "position", 0), Bookmark = Number(b, "bookmark", -1), Length = Number(b, "length", 0), Completed = (string)b.Attribute("completed") == "true", IsPinned = (string)b.Attribute("pinned") == "true", Group = ReadGroup((string)b.Attribute("group")) });
             }
@@ -125,6 +127,11 @@ namespace Reader.Core;
             return int.TryParse((string)e.Attribute(name), out value) ? value : fallback;
         }
         public static int Clamp(int n, int min, int max) { return Math.Max(min, Math.Min(max, n)); }
+
+        // 书籍 ID 是正文 SHA-256 的小写十六进制；集中校验，避免各处正则写法漂移。
+        private static readonly Regex BookIdPattern = new("^[a-f0-9]{64}$", RegexOptions.Compiled);
+        internal static bool IsBookId(string id) => !String.IsNullOrEmpty(id) && BookIdPattern.IsMatch(id);
+
         public string TextFor(Book b) { return File.ReadAllText(Path.Combine(Root, "books", b.Id + ".txt"), Encoding.UTF8); }
 
         private const long ChapterIndexLimit = 4L * 1024 * 1024;
@@ -182,14 +189,32 @@ namespace Reader.Core;
             if (String.IsNullOrWhiteSpace(text)) throw new InvalidDataException("文件中没有可阅读的正文。");
             string id;
             using (SHA256 hash = SHA256.Create()) id = String.Concat(hash.ComputeHash(Encoding.UTF8.GetBytes(text)).Select(x => x.ToString("x2")));
+            // 先落盘再判断重复：已存在的书也可能因为旧版本的半截写入而需要修复。
+            WriteText(id, text);
             Book existing = Books.FirstOrDefault(b => b.Id == id);
             if (existing != null) { WriteChapters(existing, chapters); return existing; }
-            string path = Path.Combine(Root, "books", id + ".txt");
-            if (!File.Exists(path)) File.WriteAllText(path, text, new UTF8Encoding(false));
             Book book = new Book { Id = id, Title = title, Format = format, Length = text.Length };
             Books.Insert(0, book);
             WriteChapters(book, chapters);
             return book;
+        }
+
+        /// <summary>原子写入正文；已存在文件的长度不一致时重写，修复旧版本留下的半截文件。</summary>
+        private void WriteText(string id, string text)
+        {
+            string path = Path.Combine(Root, "books", id + ".txt");
+            if (File.Exists(path) && new FileInfo(path).Length == Encoding.UTF8.GetByteCount(text)) return;
+            string temporary = path + ".tmp";
+            try
+            {
+                File.WriteAllText(temporary, text, new UTF8Encoding(false));
+                File.Move(temporary, path, true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                try { File.Delete(temporary); } catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException) { }
+                throw;
+            }
         }
 
         public void Save()

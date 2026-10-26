@@ -68,6 +68,15 @@ public static class Importer
         return book;
     }
 
+    /// <summary>按 UTF-16 长度截断；不会把代理对切成半个字符。</summary>
+    internal static string TruncateText(string value, int max)
+    {
+        if (value.Length <= max) return value;
+        int cut = max;
+        if (cut > 0 && Char.IsHighSurrogate(value[cut - 1])) cut--;
+        return value[..cut];
+    }
+
     /// <summary>
     /// 统一换行、合并行内空白、去掉空行。该函数是幂等的，因此 EPUB 可以
     /// 逐章规范化后再拼接，不需要对整本书再做第二遍。
@@ -94,17 +103,18 @@ public static class Importer
     {
         ZipArchiveEntry entry = archive.GetEntry(path);
         if (entry == null) throw new InvalidDataException("EPUB 内缺少文件：" + path);
-        if (entry.Length > EpubExpandedLimit || (total += entry.Length) > EpubExpandedLimit)
-            throw new InvalidDataException("EPUB 解压后超过 128 MB，无法导入。");
+        // 先按目录声明值快速拒绝；真正计入总量的是实际解压字节。
+        if (entry.Length > EpubExpandedLimit) throw new InvalidDataException("EPUB 解压后超过 128 MB，无法导入。");
         using (Stream stream = entry.Open())
         using (MemoryStream buffer = new MemoryStream())
         {
-            byte[] bytes = new byte[8192]; int count;
+            byte[] bytes = new byte[8192]; int count; long actual = 0;
             while ((count = stream.Read(bytes, 0, bytes.Length)) > 0)
             {
-                // ZIP 目录里的 Length 理论上可信，这里仍按实际读到的字节兜底，
-                // 防止伪造/损坏的压缩包声明的大小与实际内容不一致。
-                if (buffer.Length + count > EpubExpandedLimit) throw new InvalidDataException("EPUB 解压后超过 128 MB，无法导入。");
+                actual += count;
+                // 目录声明值与实际内容不符：伪造/损坏的压缩包不能绕过上限。
+                if (actual > entry.Length) throw new InvalidDataException("EPUB 压缩包数据与目录不一致。");
+                if ((total += count) > EpubExpandedLimit) throw new InvalidDataException("EPUB 解压后超过 128 MB，无法导入。");
                 buffer.Write(bytes, 0, count);
             }
             buffer.Position = 0;
@@ -162,7 +172,19 @@ public static class Importer
                 if (entry == null) throw new InvalidDataException("EPUB 内缺少文件：" + entryPath);
                 if (entry.Length > XmlLimit) throw new InvalidDataException("EPUB 目录文件过大。");
                 using (Stream stream = entry.Open())
-                using (StreamReader reader = new StreamReader(stream, Encoding.UTF8, true)) return reader.ReadToEnd();
+                using (MemoryStream buffer = new MemoryStream())
+                {
+                    byte[] bytes = new byte[8192]; int count; long actual = 0;
+                    while ((count = stream.Read(bytes, 0, bytes.Length)) > 0)
+                    {
+                        actual += count;
+                        // 不信任 ZIP 目录里的声明长度，按实际读到的字节限制。
+                        if (actual > XmlLimit) throw new InvalidDataException("EPUB 目录文件过大。");
+                        buffer.Write(bytes, 0, count);
+                    }
+                    buffer.Position = 0;
+                    using (StreamReader reader = new StreamReader(buffer, Encoding.UTF8, true)) return reader.ReadToEnd();
+                }
             }
             List<EpubChapters.TocEntry> toc = EpubChapters.Read(opf, opfPath, ReadTocFile, ResolveEntry);
 
@@ -198,7 +220,7 @@ public static class Importer
                     string firstLine = text;
                     int newline = firstLine.IndexOf('\n');
                     if (newline >= 0) firstLine = firstLine[..newline];
-                    if (firstLine.Length > 80) firstLine = firstLine[..80];
+                    firstLine = TruncateText(firstLine, 80);
                     spineTexts.Add(new EpubChapters.SpineText(chapters[index], textStart, text.Length, firstLine));
                 }
                 if (result.Length > TextCharLimit) throw new InvalidDataException("EPUB 正文超过 2400 万字符，请先拆分文件。");
