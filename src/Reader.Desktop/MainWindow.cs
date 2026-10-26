@@ -186,13 +186,23 @@ internal sealed partial class MainWindow : Window
             foreach (string path in paths)
             {
                 status.Text = "正在导入 " + Path.GetFileName(path);
+                // 导入与阅读/下载共用同一根进度条：Importer 每解析完一章回报一次，
+                // 结束后在 finally 里交还给阅读进度，避免把「导入 x/y」留在界面上。
+                var importProgress = new Progress<ImportProgress>(p =>
+                {
+                    if (p.Total <= 0) { progress.IsIndeterminate = true; progressLabel.Text = "导入中 …"; return; }
+                    progress.IsIndeterminate = false;
+                    progress.Value = 100.0 * p.Completed / p.Total;
+                    progressLabel.Text = $"导入 {p.Completed}/{p.Total}";
+                });
                 try
                 {
-                    var imported = await Task.Run(() => Importer.Read(path));
+                    var imported = await Task.Run(() => Importer.Read(path, importProgress));
                     var book = await Task.Run(() => store.Add(imported.Title, imported.Text, imported.Format));
                     selected = book.Id; MarkDirty();
                 }
                 catch (Exception ex) { failures.Add(Path.GetFileName(path) + "：" + ex.Message); }
+                finally { progress.IsIndeterminate = false; ShowReadingProgress(); }
             }
             status.Text = failures.Count == 0 ? "导入完成，阅读进度保存在本机。" : string.Join("\n", failures);
         });
@@ -219,9 +229,18 @@ internal sealed partial class MainWindow : Window
                 progressLabel.Text = p.Total > 0 ? $"下载 {100.0 * p.Bytes / p.Total.Value:0}%" : "下载中 …";
                 if (p.Total > 0) progress.Value = 100.0 * p.Bytes / p.Total.Value;
             });
+            // 下载完成后如果解析的是 EPUB，进度条改由章节进度驱动。
+            var importUpdates = new Progress<ImportProgress>(p =>
+            {
+                status.Text = "正在解析下载的书籍…";
+                if (p.Total <= 0) { progress.IsIndeterminate = true; progressLabel.Text = "解析中 …"; return; }
+                progress.IsIndeterminate = false;
+                progress.Value = 100.0 * p.Completed / p.Total;
+                progressLabel.Text = $"解析 {p.Completed}/{p.Total}";
+            });
             try
             {
-                var imported = await downloads.DownloadAsync(address, updates, cancellation.Token);
+                var imported = await downloads.DownloadAsync(address, updates, cancellation.Token, importUpdates);
                 var book = await Task.Run(() => store.Add(imported.Title, imported.Text, imported.Format));
                 selected = book.Id; MarkDirty(); status.Text = "下载完成，已加入书架。";
             }

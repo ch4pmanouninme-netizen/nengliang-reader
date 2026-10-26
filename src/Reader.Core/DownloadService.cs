@@ -18,7 +18,11 @@ public sealed class DownloadService : IDisposable
         client.DefaultRequestHeaders.UserAgent.ParseAdd("NengliangReader/2.0");
     }
 
-    public async Task<ImportedBook> DownloadAsync(string address, IProgress<DownloadProgress> progress, CancellationToken cancellation)
+    /// <summary>
+    /// 下载并导入一个 TXT/EPUB。下载阶段通过 <paramref name="progress"/> 回报字节数；
+    /// 下载完成后若是 EPUB，解析阶段通过 <paramref name="importProgress"/> 回报章节进度。
+    /// </summary>
+    public async Task<ImportedBook> DownloadAsync(string address, IProgress<DownloadProgress> progress, CancellationToken cancellation, IProgress<ImportProgress> importProgress = null)
     {
         if (!Uri.TryCreate(address.Trim(), UriKind.Absolute, out var uri) || !Allowed(uri))
             throw new InvalidDataException("请输入 HTTP 或 HTTPS 文件下载链接。");
@@ -74,7 +78,7 @@ public sealed class DownloadService : IDisposable
                 string ready = Path.Combine(temporary, zip ? "book.epub" : "book.txt");
                 File.Move(raw, ready);
                 timeout.Token.ThrowIfCancellationRequested();
-                var book = await Task.Run(() => Importer.Read(ready), timeout.Token).ConfigureAwait(false);
+                var book = await Task.Run(() => Importer.Read(ready, importProgress), timeout.Token).ConfigureAwait(false);
                 if (!zip) book.Title = string.IsNullOrWhiteSpace(remoteName) ? "下载的书籍" : Path.GetFileNameWithoutExtension(remoteName);
                 timeout.Token.ThrowIfCancellationRequested();
                 return book;

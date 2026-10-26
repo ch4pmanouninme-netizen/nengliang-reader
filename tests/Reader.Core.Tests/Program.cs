@@ -11,6 +11,7 @@ try
     Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
     if (LegacyTests.Run([Path.Combine(root, "legacy")]) != 0) return 1;
     await Downloads();
+    await LargeEpub();
     // A library of its own, so the derived pipe name cannot collide with an installed copy of the
     // reader running on the same machine.
     string controlRoot = Path.Combine(root, "control");
@@ -166,6 +167,42 @@ static async Task Downloads()
     using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
     try { await blocked.DownloadAsync("https://example.test/book.txt", null, cancellation.Token); throw new Exception("cancel failed"); }
     catch (OperationCanceledException) { Check(true, "download cancellation propagates"); }
+}
+
+static async Task LargeEpub()
+{
+    string path = Path.Combine(Path.GetTempPath(), "large-" + Guid.NewGuid().ToString("N") + ".epub");
+    try
+    {
+        using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
+        {
+            void Entry(string name, string body) { using var writer = new StreamWriter(zip.CreateEntry(name).Open(), new UTF8Encoding(false)); writer.Write(body); }
+            Entry("META-INF/container.xml", "<container><rootfile full-path='book.opf'/></container>");
+            Entry("book.opf", "<package><metadata><title>大文件</title></metadata><manifest><item id='a' href='a.xhtml' media-type='application/xhtml+xml'/></manifest><spine><itemref idref='a'/></spine></package>");
+            // 25 MB 的标签属性：解压后超过旧的 24 MB 上限，但去掉标记后正文只有一句话。
+            // 这正是一本正常长篇小说的形态——XHTML 标记占体积，正文长度远低于上限。
+            // 用属性而不是注释块，是为了让正则走线性的字符类匹配，而不是 25 MB 的惰性回溯。
+            using (var writer = new StreamWriter(zip.CreateEntry("a.xhtml").Open(), new UTF8Encoding(false)))
+            {
+                writer.Write("<html><body><div data-filler=\"");
+                char[] chunk = new char[8192];
+                Array.Fill(chunk, 'x');
+                long written = 0;
+                while (written < 25L * 1024 * 1024) { writer.Write(chunk); written += chunk.Length; }
+                writer.Write("\"><p>正文</p></div></body></html>");
+            }
+        }
+        var reports = new List<ImportProgress>();
+        var imported = await Task.Run(() => Importer.Read(path, new SyncProgress<ImportProgress>(reports.Add)));
+        Check(imported.Text == "正文", "EPUB expanded content above the old 24 MB limit imports");
+        Check(reports.Count == 1 && reports[0].Completed == 1 && reports[0].Total == 1, "EPUB import reports spine progress");
+    }
+    finally { File.Delete(path); }
+}
+
+sealed class SyncProgress<T>(Action<T> report) : IProgress<T>
+{
+    public void Report(T value) => report(value);
 }
 
 sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> response) : HttpMessageHandler
