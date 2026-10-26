@@ -369,6 +369,8 @@ internal sealed partial class MainWindow : Window
 
     private void ApplyTheme() => RequestedThemeVariant = UiThemes.Resolve(store.Pref).Dark ? ThemeVariant.Dark : ThemeVariant.Light;
     private void MarkDirty() { dirty = true; revision++; }
+    // 窗口位置等纯偏好变化不需要重算阅读描述，只标记待保存。
+    internal void MarkDirtyOnly() => MarkDirty();
     private void Save() => _ = SaveAsync();
     private Task<bool> SaveAsync()
     {

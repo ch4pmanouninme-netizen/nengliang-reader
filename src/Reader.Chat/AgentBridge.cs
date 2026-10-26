@@ -506,6 +506,7 @@ namespace Reader.Chat
 
         private void Connect()
         {
+            if (Volatile.Read(ref disposed) != 0) return;
             if (connection != null)
             {
                 if (connection.Connected) { backoff = 2; return; }
@@ -516,6 +517,8 @@ namespace Reader.Chat
             candidate.Received += delegate(ChatPacket packet) { Enqueue(packet); };
             candidate.Dropped += delegate(string message) { status = "已掉线，正在重连"; nextAttempt = DateTime.MinValue; };
             connection = candidate;
+            // Dispose 可能在上面的检查之后运行；赋值后再确认一次，避免留下幽灵连接。
+            if (Volatile.Read(ref disposed) != 0) { candidate.Dispose(); connection = null; return; }
             try
             {
                 candidate.ConnectAsync(host, port, options.Nick, code, fingerprint).GetAwaiter().GetResult();
@@ -524,6 +527,8 @@ namespace Reader.Chat
             catch (Exception ex)
             {
                 if (!ChatWire.Expected(ex)) throw;
+                // 连接期间已经 Dispose：关闭 candidate，不要留下接收循环和心跳。
+                if (Volatile.Read(ref disposed) != 0) { candidate.Dispose(); if (ReferenceEquals(connection, candidate)) connection = null; return; }
                 status = "未加入房间：" + ex.Message;
                 nextAttempt = DateTime.UtcNow.AddSeconds(backoff);
                 backoff = Math.Min(60, backoff * 2);   // the service rate-limits 12 attempts per minute per address

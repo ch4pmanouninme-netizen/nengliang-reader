@@ -20,9 +20,12 @@ internal sealed class ReaderWindow : Window
     private readonly ReadingSurface surface;
     private readonly DispatcherTimer auto = new();
     private readonly DispatcherTimer positionTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly DispatcherTimer resizeTimer = new() { Interval = TimeSpan.FromMilliseconds(120) };
     private readonly TextBlock footer = new() { FontSize = 10, Margin = new Thickness(8, 0, 8, 2), Foreground = Brushes.Gray };
     private ReadingPage? page;
     private IReadOnlyList<Chapter>? chapters;
+    private Task<IReadOnlyList<Chapter>>? chaptersTask;
+    private bool loadingChapters;
     private bool closing, applying;
     private bool resizing, prompting;
     private double initialWidth;
@@ -72,12 +75,35 @@ internal sealed class ReaderWindow : Window
             else return;
             e.Handled = true;
         };
-        SizeChanged += (_, _) => { if (!applying) { preferences.Width = (int)Width; session.ClearHistory(); RefreshPage(); library.Changed(); } };
-        PositionChanged += (_, _) => { if (!applying) { preferences.X = Position.X; preferences.Y = Position.Y; preferences.HasPosition = true; library.Changed(); } };
+        SizeChanged += (_, _) =>
+        {
+            if (applying) return;
+            preferences.Width = (int)Width;
+            // 拖拽右边缘会连续触发 SizeChanged；停手后再重新分页，避免每帧重排。
+            resizeTimer.Stop(); resizeTimer.Start();
+        };
+        resizeTimer.Tick += (_, _) =>
+        {
+            resizeTimer.Stop();
+            if (closing) return;
+            session.ClearHistory(); RefreshPage(); library.Changed();
+        };
+        PositionChanged += (_, _) =>
+        {
+            if (applying) return;
+            preferences.X = Position.X; preferences.Y = Position.Y; preferences.HasPosition = true;
+            // 窗口位置不影响阅读进度文案，只标脏，交给现有 2 秒保存定时器落盘。
+            library.MarkDirtyOnly();
+        };
+        PropertyChanged += (_, e) =>
+        {
+            if (e.Property != IsVisibleProperty) return;
+            if (IsVisible) { positionTimer.Start(); EnsureVisible(); }
+            else positionTimer.Stop();
+        };
         Closing += (_, e) => { if (!closing) { e.Cancel = true; library.ToggleReader(); } };
         auto.Tick += (_, _) => { if (IsVisible && ContextMenu?.IsOpen != true) Move(true); else Pause(); };
         positionTimer.Tick += (_, _) => { if (IsVisible) EnsureVisible(); };
-        positionTimer.Start();
         applying = true;
         if (preferences.HasPosition) Position = new PixelPoint(preferences.X, preferences.Y);
         else if (Screens.Primary is { } screen) Position = new PixelPoint(screen.WorkingArea.X + 60, screen.WorkingArea.Bottom - 100);
@@ -166,15 +192,38 @@ internal sealed class ReaderWindow : Window
         session.Seek((int)(number / 100 * (session.Text.Length - 1))); RefreshPage(); library.Changed();
     }
 
+    private Task<IReadOnlyList<Chapter>> LoadChaptersAsync()
+    {
+        // 读取 sidecar 和标题启发式都可能扫全文；放到后台线程，避免首次打开目录时卡住阅读条。
+        return Task.Run(() =>
+        {
+            // EPUB 导入时保存的结构化目录优先；旧书没有 sidecar 或索引不完整时，再用标题启发式。
+            var stored = library.ChaptersFor(session.Book)?
+                .Where(chapter => chapter.Position >= 0 && chapter.Position < session.Text.Length).ToList();
+            if (stored != null && stored.Count >= 2) return (IReadOnlyList<Chapter>)stored;
+            return ChapterIndex.Find(session.Text);
+        });
+    }
+
     private async Task ChooseChapter()
     {
         if (chapters == null)
         {
-            // EPUB 导入时保存的结构化目录优先；旧书没有 sidecar 或索引不完整时，
-            // 再用标题启发式。两种索引都只计算一次，换书会重建窗口。
-            chapters = library.ChaptersFor(session.Book)?
-                .Where(chapter => chapter.Position >= 0 && chapter.Position < session.Text.Length).ToList();
-            if (chapters == null || chapters.Count < 2) chapters = ChapterIndex.Find(session.Text);
+            if (loadingChapters) return;
+            loadingChapters = true;
+            Pause();
+            footer.Text = "正在读取目录…";
+            try { chapters = await (chaptersTask ??= LoadChaptersAsync()); }
+            catch (Exception ex)
+            {
+                chaptersTask = null;
+                await Message("选择章节", "读取目录失败：" + ex.Message);
+                RefreshPage();
+                return;
+            }
+            finally { loadingChapters = false; }
+            if (closing) return;
+            RefreshPage();
         }
         // 识别不到章节标题时保留百分比跳转作为兜底，避免整本书完全失去跳转能力。
         if (chapters.Count < 2) { await Jump("未识别到章节标题，请输入 0～100 的阅读百分比。"); return; }
@@ -212,24 +261,43 @@ internal sealed class ReaderWindow : Window
             Math.Clamp(Position.Y, area.Y, Math.Max(area.Y, area.Bottom - bounds.Height)));
         if (next != Position) Position = next;
     }
-    public void DisposeReader() { closing = true; auto.Stop(); positionTimer.Stop(); Close(); }
+    public void DisposeReader() { closing = true; auto.Stop(); resizeTimer.Stop(); positionTimer.Stop(); surface.ReleaseLayouts(); Close(); }
 }
 
 internal sealed class ReadingSurface : Control
 {
-    public Typeface Typeface { get; set; } = new("sans-serif");
-    public double FontSize { get; set; } = 16;
-    public IBrush Ink { get; set; } = Brushes.DimGray;
-    public IReadOnlyList<string> Lines { get; set; } = [];
+    private Typeface typeface = new("sans-serif");
+    private double fontSize = 16;
+    private IBrush ink = Brushes.DimGray;
+    private IReadOnlyList<string> lines = [];
+    private TextLayout[]? layouts;
+
+    public Typeface Typeface { get => typeface; set { typeface = value; ClearLayouts(); } }
+    public double FontSize { get => fontSize; set { fontSize = value; ClearLayouts(); } }
+    public IBrush Ink { get => ink; set { ink = value; ClearLayouts(); } }
+    public IReadOnlyList<string> Lines { get => lines; set { lines = value; ClearLayouts(); } }
     public double LineHeight => Math.Ceiling(FontSize * 1.55);
     public TextLayout CreateLayout(string text) => new(text, Typeface, FontSize, Ink);
+
     public override void Render(DrawingContext context)
     {
         base.Render(context);
-        for (int row = 0; row < Lines.Count; row++)
+        // 重绘只复用缓存；内容/字体/字号/颜色变化时由属性 setter 清空。
+        if (layouts == null || layouts.Length != Lines.Count)
         {
-            using var layout = CreateLayout(Lines[row]);
-            layout.Draw(context, new Point(8, 6 + row * LineHeight));
+            ClearLayouts();
+            layouts = new TextLayout[Lines.Count];
+            for (int row = 0; row < Lines.Count; row++) layouts[row] = CreateLayout(Lines[row]);
         }
+        for (int row = 0; row < layouts.Length; row++)
+            layouts[row].Draw(context, new Point(8, 6 + row * LineHeight));
+    }
+
+    public void ReleaseLayouts() => ClearLayouts();
+
+    private void ClearLayouts()
+    {
+        if (layouts != null) foreach (TextLayout layout in layouts) layout.Dispose();
+        layouts = null;
     }
 }

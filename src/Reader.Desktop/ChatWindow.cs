@@ -30,6 +30,7 @@ internal sealed class ChatWindow : Window
     private readonly Action save;
     private ChatConnection? connection;
     private bool wanted, joining, sending, closed;
+    private bool transcriptDirty;
     private int generation;
     private DateTime retryAt;
     private string session = "";
@@ -96,6 +97,8 @@ internal sealed class ChatWindow : Window
         timer.Tick += async (_, _) =>
         {
             foreach (var packet in inbox.Drain()) Receive(packet);
+            // 一次 Drain 里可能重连回放上百条；等全部处理完再重建一次文本。
+            FlushTranscript();
             UpdateControls();
             if (wanted && !joining && connection?.Connected != true && DateTime.UtcNow >= retryAt) await Join();
         };
@@ -137,7 +140,7 @@ internal sealed class ChatWindow : Window
         switch (packet.Kind)
         {
             case "welcome":
-                if (session != packet.Session) { lines.Clear(); transcript.Clear(); session = packet.Session; lastId = 0; }
+                if (session != packet.Session) { lines.Clear(); transcript.Clear(); transcriptDirty = false; session = packet.Session; lastId = 0; }
                 state.Text = $"已加密连接 · 在线 {packet.Online} 人"; return;
             case "state": state.Text = $"已加密连接 · 在线 {packet.Online} 人"; Append("· " + packet.Text); return;
             case "error": Append("· " + packet.Text); return;
@@ -152,7 +155,15 @@ internal sealed class ChatWindow : Window
     private void Append(string text)
     {
         lines.Enqueue(text); while (lines.Count > 150) lines.Dequeue();
-        transcript.Text = string.Join("\n\n", lines); transcript.CaretIndex = transcript.Text.Length;
+        transcriptDirty = true;
+    }
+
+    private void FlushTranscript()
+    {
+        if (!transcriptDirty) return;
+        transcriptDirty = false;
+        string text = string.Join("\n\n", lines);
+        transcript.Text = text; transcript.CaretIndex = text.Length;
     }
     private async Task Send()
     {
@@ -166,7 +177,7 @@ internal sealed class ChatWindow : Window
     private void Leave()
     {
         wanted = false; generation++; inbox.Reset(); connection?.Dispose(); connection = null;
-        lines.Clear(); transcript.Clear(); compose.Clear(); session = ""; lastId = 0; state.Text = "已离开会话"; UpdateControls();
+        lines.Clear(); transcript.Clear(); transcriptDirty = false; compose.Clear(); session = ""; lastId = 0; state.Text = "已离开会话"; UpdateControls();
     }
     private void UpdateControls()
     {
