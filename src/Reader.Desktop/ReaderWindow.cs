@@ -22,6 +22,7 @@ internal sealed class ReaderWindow : Window
     private readonly DispatcherTimer positionTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly TextBlock footer = new() { FontSize = 10, Margin = new Thickness(8, 0, 8, 2), Foreground = Brushes.Gray };
     private ReadingPage? page;
+    private IReadOnlyList<Chapter>? chapters;
     private bool closing, applying;
     private bool resizing, prompting;
     private double initialWidth;
@@ -63,7 +64,7 @@ internal sealed class ReaderWindow : Window
             if (command && e.Key == Key.B) Bookmark();
             else if (command && e.Key == Key.J) GoBookmark();
             else if (command && e.Key == Key.F) await Find();
-            else if (command && e.Key == Key.G) await Jump();
+            else if (command && e.Key == Key.G) await ChooseChapter();
             else if (e.Key is Key.Right or Key.Down or Key.PageDown) Move(true);
             else if (e.Key is Key.Left or Key.Up or Key.PageUp) Move(false);
             else if (e.Key == Key.Space) ToggleAuto();
@@ -89,7 +90,7 @@ internal sealed class ReaderWindow : Window
         var menu = new ContextMenu();
         void Add(string title, Action action) { var item = new MenuItem { Header = title }; item.Click += (_, _) => action(); menu.Items.Add(item); }
         Add("下一页", () => Move(true)); Add("上一页", () => Move(false)); Add("自动阅读 / 暂停", ToggleAuto);
-        Add("保存书签", Bookmark); Add("回到书签", GoBookmark); Add("查找文字", () => _ = Find()); Add("跳转进度", () => _ = Jump());
+        Add("保存书签", Bookmark); Add("回到书签", GoBookmark); Add("查找文字", () => _ = Find()); Add("选择章节", () => _ = ChooseChapter());
         Add("阅读设置", () => _ = library.Settings()); Add("切换鼠标穿透", library.ToggleClickThrough);
         Add("返回书架", library.RestoreLibrary); Add("主页", () => library.ShowHome?.Invoke()); Add("隐藏", library.ToggleReader);
         return menu;
@@ -156,13 +157,35 @@ internal sealed class ReaderWindow : Window
         if (index >= 0) { session.Seek(index); RefreshPage(); library.Changed(); }
         else await Message("查找", "没有找到这段文字。");
     }
-    private async Task Jump()
+    private async Task Jump(string description = "输入 0～100 的阅读百分比。")
     {
-        string? text = await Prompt("跳转", "输入 0～100 的阅读百分比。", session.Percent.ToString());
+        string? text = await Prompt("跳转", description, session.Percent.ToString());
         if (text == null) return;
         if (!double.TryParse(text.Trim().TrimEnd('%'), out double number) || !double.IsFinite(number) || number < 0 || number > 100)
         { await Message("跳转", "请输入 0～100 的有效数字。"); return; }
         session.Seek((int)(number / 100 * (session.Text.Length - 1))); RefreshPage(); library.Changed();
+    }
+
+    private async Task ChooseChapter()
+    {
+        if (chapters == null)
+        {
+            // EPUB 导入时保存的结构化目录优先；旧书没有 sidecar 或索引不完整时，
+            // 再用标题启发式。两种索引都只计算一次，换书会重建窗口。
+            chapters = library.ChaptersFor(session.Book)?
+                .Where(chapter => chapter.Position >= 0 && chapter.Position < session.Text.Length).ToList();
+            if (chapters == null || chapters.Count < 2) chapters = ChapterIndex.Find(session.Text);
+        }
+        // 识别不到章节标题时保留百分比跳转作为兜底，避免整本书完全失去跳转能力。
+        if (chapters.Count < 2) { await Jump("未识别到章节标题，请输入 0～100 的阅读百分比。"); return; }
+        Pause(); bool top = Topmost; Topmost = false; prompting = true;
+        try
+        {
+            Chapter? chosen = await new ChapterDialog(chapters, session.Position).ShowDialog<Chapter?>(this);
+            if (chosen == null) return;
+            session.Seek(chosen.Position); RefreshPage(); library.Changed();
+        }
+        finally { Topmost = top; prompting = false; }
     }
     public void SetClickThrough(bool enabled)
     {

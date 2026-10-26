@@ -153,6 +153,19 @@ public static class Importer
                 if (id != null && href != null && (type.Contains("html") || type == "text/plain")) manifest[id] = ResolveEntry(opfPath, href);
             }
 
+            // 目录优先于标题启发式：书内自带 nav.xhtml（EPUB3）或 toc.ncx（EPUB2）时，
+            // 直接按官方目录建章节索引，不再依赖“第X章”这种排版习惯。
+            // 目录文件单独按 XmlLimit 限长，不占用正文的解压预算。
+            string ReadTocFile(string entryPath)
+            {
+                ZipArchiveEntry entry = zip.GetEntry(entryPath);
+                if (entry == null) throw new InvalidDataException("EPUB 内缺少文件：" + entryPath);
+                if (entry.Length > XmlLimit) throw new InvalidDataException("EPUB 目录文件过大。");
+                using (Stream stream = entry.Open())
+                using (StreamReader reader = new StreamReader(stream, Encoding.UTF8, true)) return reader.ReadToEnd();
+            }
+            List<EpubChapters.TocEntry> toc = EpubChapters.Read(opf, opfPath, ReadTocFile, ResolveEntry);
+
             // spine 决定阅读顺序；linear="no" 的条目（封面、目录页等）不进入正文。
             List<string> chapters = new List<string>();
             foreach (XElement itemref in opf.Descendants().Where(e => e.Name.LocalName == "itemref"))
@@ -163,6 +176,7 @@ public static class Importer
                 if (manifest.TryGetValue(idref, out chapter)) chapters.Add(chapter);
             }
 
+            List<EpubChapters.SpineText> spineTexts = new List<EpubChapters.SpineText>();
             StringBuilder result = new StringBuilder();
             for (int index = 0; index < chapters.Count; index++)
             {
@@ -178,7 +192,14 @@ public static class Importer
                 if (text.Length > 0)
                 {
                     if (result.Length > 0) result.Append('\n');
+                    int textStart = result.Length;
                     result.Append(text);
+                    // 记录该 spine 文件在最终正文里的范围，供目录项映射偏移。
+                    string firstLine = text;
+                    int newline = firstLine.IndexOf('\n');
+                    if (newline >= 0) firstLine = firstLine[..newline];
+                    if (firstLine.Length > 80) firstLine = firstLine[..80];
+                    spineTexts.Add(new EpubChapters.SpineText(chapters[index], textStart, text.Length, firstLine));
                 }
                 if (result.Length > TextCharLimit) throw new InvalidDataException("EPUB 正文超过 2400 万字符，请先拆分文件。");
                 progress?.Report(new ImportProgress(index + 1, chapters.Count));
@@ -186,7 +207,8 @@ public static class Importer
 
             string body = result.ToString();
             if (body.Length == 0) throw new InvalidDataException("EPUB 没有可读取的正文，可能是加密书籍或扫描图片版。");
-            return new ImportedBook { Title = title == null ? Path.GetFileNameWithoutExtension(path) : title.Value.Trim(), Text = body, Format = "EPUB" };
+            IReadOnlyList<Chapter> chapterIndex = EpubChapters.Build(toc, spineTexts, body);
+            return new ImportedBook { Title = title == null ? Path.GetFileNameWithoutExtension(path) : title.Value.Trim(), Text = body, Format = "EPUB", Chapters = chapterIndex };
         }
     }
 }

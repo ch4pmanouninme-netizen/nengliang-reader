@@ -11,28 +11,35 @@ public static class LibraryArchive
 
     public static void Export(Store store, string destination)
     {
-        if (store.Books.Count + 1 > EntryLimit) throw new InvalidDataException("书库超过 4999 本，无法导出单个备份。");
         store.Save();
-        long total = 0;
-        foreach (string file in store.Books.Select(book => Path.Combine(store.Root, "books", book.Id + ".txt")).Prepend(Path.Combine(store.Root, "state.xml")))
+        // 每本书最多两个条目：正文 + 可选章节索引（EPUB 目录 sidecar）。
+        var files = new List<(string Source, string Entry)>
         {
-            long size = new FileInfo(file).Length;
+            (Path.Combine(store.Root, "state.xml"), "state.xml"),
+        };
+        foreach (Book book in store.Books)
+        {
+            files.Add((Path.Combine(store.Root, "books", book.Id + ".txt"), "books/" + book.Id + ".txt"));
+            string chapters = Path.Combine(store.Root, "books", book.Id + ".chapters.tsv");
+            if (File.Exists(chapters)) files.Add((chapters, "books/" + book.Id + ".chapters.tsv"));
+        }
+        if (files.Count > EntryLimit) throw new InvalidDataException($"书库超过 {EntryLimit - 1} 个文件，无法导出单个备份。");
+        long total = 0;
+        foreach (var file in files)
+        {
+            long size = new FileInfo(file.Source).Length;
             if (size > FileLimit || (total += size) > ArchiveLimit) throw new InvalidDataException("书库超过备份容量上限（单文件 64 MB，总计 256 MB）。");
         }
-        
+
         string temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        
         try
         {
             using (var zip = ZipFile.Open(temporary, ZipArchiveMode.Create))
             {
-                zip.CreateEntryFromFile(Path.Combine(store.Root, "state.xml"), "state.xml");
-                foreach (var book in store.Books)
-                    zip.CreateEntryFromFile(Path.Combine(store.Root, "books", book.Id + ".txt"), "books/" + book.Id + ".txt");
+                foreach (var file in files) zip.CreateEntryFromFile(file.Source, file.Entry);
             }
             File.Move(temporary, destination, true);
         }
-        
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 
@@ -48,10 +55,13 @@ public static class LibraryArchive
                 if (zip.Entries.Count > EntryLimit) throw new InvalidDataException("备份条目过多。");
                 foreach (var entry in zip.Entries)
                 {
-                    if (entry.FullName != "state.xml" && !Regex.IsMatch(entry.FullName, "^books/[a-f0-9]{64}\\.txt$"))
+                    if (entry.FullName != "state.xml" && !Regex.IsMatch(entry.FullName, "^books/[a-f0-9]{64}\\.(txt|chapters\\.tsv)$"))
                         throw new InvalidDataException("备份包含不支持的文件路径。");
                     if ((total += entry.Length) > ArchiveLimit || entry.Length > FileLimit)
                         throw new InvalidDataException("备份展开后过大（单文件上限 64 MB，总计 256 MB）。");
+                    // 章节索引只应是几 KB～几 MB；超限直接拒绝，避免把超大文件落盘。
+                    if (entry.FullName.EndsWith(".chapters.tsv", StringComparison.Ordinal) && entry.Length > 4L * 1024 * 1024)
+                        throw new InvalidDataException("备份中的章节索引过大。");
                     using var input = entry.Open();
                     using var output = new FileStream(Path.Combine(staging, entry.FullName), FileMode.CreateNew);
                     byte[] buffer = new byte[81920]; int count; long actual = 0;
@@ -76,7 +86,7 @@ public static class LibraryArchive
             // Validate all texts before changing the destination library.
             var restored = new Store(staging);
             if (restored.RecoveryNotice.Length != 0) throw new InvalidDataException("备份中的书库索引损坏。");
-            var imported = restored.Books.Select(book => (Book: book, Text: restored.TextFor(book))).ToArray();
+            var imported = restored.Books.Select(book => (Book: book, Text: restored.TextFor(book), Chapters: restored.ChaptersFor(book))).ToArray();
             if (imported.Any(item => string.IsNullOrWhiteSpace(item.Text))) throw new InvalidDataException("备份包含空白书籍。");
             store.Save();
             File.Copy(Path.Combine(store.Root, "state.xml"), Path.Combine(store.Root, "state.before-import.xml"), true);
@@ -84,7 +94,7 @@ public static class LibraryArchive
             foreach (var item in imported)
             {
                 int before = store.Books.Count;
-                var book = store.Add(item.Book.Title, item.Text, item.Book.Format);
+                var book = store.Add(item.Book.Title, item.Text, item.Book.Format, item.Chapters);
                 if (store.Books.Count == before) continue;
                 book.Position = Store.Clamp(item.Book.Position, 0, Math.Max(0, item.Text.Length - 1));
                 book.Bookmark = item.Book.Bookmark < 0 ? -1 : Store.Clamp(item.Book.Bookmark, 0, Math.Max(0, item.Text.Length - 1));

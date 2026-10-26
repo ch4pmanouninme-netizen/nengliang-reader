@@ -36,6 +36,8 @@ internal sealed partial class MainWindow : Window
     public Action? ThemeChanged { get; set; }
     internal HomeWindow? SmokeHome { get; set; }
     public Window? VisibleReader => reader?.IsVisible == true ? reader : null;
+    // 阅读条优先使用随书保存的 EPUB 目录；TXT 没有 sidecar，返回 null。
+    internal IReadOnlyList<Chapter> ChaptersFor(Book book) => store.ChaptersFor(book);
     public void PauseReader() => reader?.Pause();
     public void SavePreferences() { MarkDirty(); Save(); }
     public void RefreshTheme() => ApplyTheme();
@@ -198,7 +200,7 @@ internal sealed partial class MainWindow : Window
                 try
                 {
                     var imported = await Task.Run(() => Importer.Read(path, importProgress));
-                    var book = await Task.Run(() => store.Add(imported.Title, imported.Text, imported.Format));
+                    var book = await Task.Run(() => store.Add(imported.Title, imported.Text, imported.Format, imported.Chapters));
                     selected = book.Id; MarkDirty();
                 }
                 catch (Exception ex) { failures.Add(Path.GetFileName(path) + "：" + ex.Message); }
@@ -241,7 +243,7 @@ internal sealed partial class MainWindow : Window
             try
             {
                 var imported = await downloads.DownloadAsync(address, updates, cancellation.Token, importUpdates);
-                var book = await Task.Run(() => store.Add(imported.Title, imported.Text, imported.Format));
+                var book = await Task.Run(() => store.Add(imported.Title, imported.Text, imported.Format, imported.Chapters));
                 selected = book.Id; MarkDirty(); status.Text = "下载完成，已加入书架。";
             }
             catch (OperationCanceledException) { status.Text = "下载已取消。"; }

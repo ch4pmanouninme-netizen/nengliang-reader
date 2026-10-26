@@ -12,6 +12,8 @@ try
     if (LegacyTests.Run([Path.Combine(root, "legacy")]) != 0) return 1;
     await Downloads();
     await LargeEpub();
+    Chapters();
+    EpubToc();
     // A library of its own, so the derived pipe name cannot collide with an installed copy of the
     // reader running on the same machine.
     string controlRoot = Path.Combine(root, "control");
@@ -167,6 +169,87 @@ static async Task Downloads()
     using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
     try { await blocked.DownloadAsync("https://example.test/book.txt", null, cancellation.Token); throw new Exception("cancel failed"); }
     catch (OperationCanceledException) { Check(true, "download cancellation propagates"); }
+}
+
+static void Chapters()
+{
+    string text = "前言文字\n第一章 初见\n正文一\n第一回合 他输了\n第一节课 开始了\n第2章 重逢\n正文二\nChapter 3 Again\n正文三\n番外 后来\n正文四";
+    var found = ChapterIndex.Find(text);
+    Check(found.Select(chapter => chapter.Title).SequenceEqual(new[] { "开头", "第一章 初见", "第2章 重逢", "Chapter 3 Again", "番外 后来" }), "chapter headings are detected in order without false positives");
+    Check(text.Substring(found[1].Position).StartsWith("第一章 初见", StringComparison.Ordinal), "chapter position points at the heading");
+    Check(ChapterIndex.Find("作品相关\n作者的话\n完本感言").Select(chapter => chapter.Title).SequenceEqual(new[] { "作品相关", "完本感言" }), "section headings are detected");
+    Check(ChapterIndex.Find("第一章 A\n第一章 A\n正文\n第二章 B").Count == 2, "adjacent duplicate headings keep one entry");
+    Check(ChapterIndex.Find("第3章 请假一天，顺便小聊几句。\n正文\n第4章 归来").Select(chapter => chapter.Title).SequenceEqual(new[] { "第3章 请假一天，顺便小聊几句。", "第4章 归来" }), "a title ending with a period is kept when the heading has a separator");
+    Check(ChapterIndex.Find("第一章 开始\n正文\n第一章的内容很精彩。\n第二章 续").Select(chapter => chapter.Title).SequenceEqual(new[] { "第一章 开始", "第二章 续" }), "chapter-like sentences are not headings");
+    Check(ChapterIndex.Find("只有正文\n没有任何章节标题").Count == 0, "a book without headings has no chapter index");
+}
+
+static void EpubToc()
+{
+    string root = Path.Combine(Path.GetTempPath(), "epub-toc-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    try
+    {
+        // EPUB2：toc.ncx。目录标题故意与正文标题不同，证明用的是书内目录而不是首行猜测。
+        string ncxPath = Path.Combine(root, "ncx.epub");
+        using (var zip = ZipFile.Open(ncxPath, ZipArchiveMode.Create))
+        {
+            void Entry(string name, string body) { using var writer = new StreamWriter(zip.CreateEntry(name).Open(), new UTF8Encoding(false)); writer.Write(body); }
+            Entry("META-INF/container.xml", "<container><rootfile full-path='OEBPS/content.opf'/></container>");
+            Entry("OEBPS/content.opf", "<package><metadata><title>NCX 测试</title></metadata><manifest>" +
+                "<item id='ncx' href='toc.ncx' media-type='application/x-dtbncx+xml'/>" +
+                "<item id='a' href='Text/a.xhtml' media-type='application/xhtml+xml'/>" +
+                "<item id='b' href='Text/b.xhtml' media-type='application/xhtml+xml'/>" +
+                "</manifest><spine toc='ncx'><itemref idref='a'/><itemref idref='b'/></spine></package>");
+            Entry("OEBPS/toc.ncx", "<ncx xmlns='http://www.daisy.org/z3986/2005/ncx/'><navMap>" +
+                "<navPoint><navLabel><text>目录甲</text></navLabel><content src='Text/a.xhtml'/></navPoint>" +
+                "<navPoint><navLabel><text>目录乙</text></navLabel><content src='Text/b.xhtml'/></navPoint>" +
+                "</navMap></ncx>");
+            Entry("OEBPS/Text/a.xhtml", "<html><body><h2>第一章 起</h2><p>正文一</p></body></html>");
+            Entry("OEBPS/Text/b.xhtml", "<html><body><h2>第二章 承</h2><p>正文二</p></body></html>");
+        }
+        var ncx = Importer.Read(ncxPath);
+        Check(ncx.Chapters != null && ncx.Chapters.Count == 2, "EPUB NCX produces a chapter index");
+        Check(ncx.Chapters[0].Title == "目录甲" && ncx.Chapters[1].Title == "目录乙", "EPUB NCX titles are used");
+        Check(ncx.Text.Substring(ncx.Chapters[1].Position).StartsWith("第二章 承", StringComparison.Ordinal), "EPUB NCX position points at the chapter");
+
+        // EPUB3：nav.xhtml。
+        string navPath = Path.Combine(root, "nav.epub");
+        using (var zip = ZipFile.Open(navPath, ZipArchiveMode.Create))
+        {
+            void Entry(string name, string body) { using var writer = new StreamWriter(zip.CreateEntry(name).Open(), new UTF8Encoding(false)); writer.Write(body); }
+            Entry("META-INF/container.xml", "<container><rootfile full-path='OEBPS/content.opf'/></container>");
+            Entry("OEBPS/content.opf", "<package><metadata><title>NAV 测试</title></metadata><manifest>" +
+                "<item id='nav' href='nav.xhtml' media-type='application/xhtml+xml' properties='nav'/>" +
+                "<item id='a' href='Text/a.xhtml' media-type='application/xhtml+xml'/>" +
+                "<item id='b' href='Text/b.xhtml' media-type='application/xhtml+xml'/>" +
+                "</manifest><spine><itemref idref='a'/><itemref idref='b'/></spine></package>");
+            Entry("OEBPS/nav.xhtml", "<html xmlns:epub='http://www.idpf.org/2007/ops'><body><nav epub:type='toc'><ol>" +
+                "<li><a href='Text/a.xhtml'>导航一</a></li><li><a href='Text/b.xhtml'>导航二</a></li>" +
+                "</ol></nav></body></html>");
+            Entry("OEBPS/Text/a.xhtml", "<html><body><h2>第一章 起</h2><p>正文一</p></body></html>");
+            Entry("OEBPS/Text/b.xhtml", "<html><body><h2>第二章 承</h2><p>正文二</p></body></html>");
+        }
+        var nav = Importer.Read(navPath);
+        Check(nav.Chapters != null && nav.Chapters.Count == 2, "EPUB nav produces a chapter index");
+        Check(nav.Chapters[0].Title == "导航一" && nav.Chapters[1].Title == "导航二", "EPUB nav titles are used");
+
+        // sidecar 持久化与书库备份往返。
+        string libraryRoot = Path.Combine(root, "library");
+        var store = new Store(libraryRoot);
+        store.Add("带目录的书", "第一章\n正文\n第二章\n正文", "EPUB", new[] { new Chapter("第一章", 0), new Chapter("第二章", "第一章\n正文\n".Length) });
+        store.Save();
+        var reopened = new Store(libraryRoot);
+        var stored = reopened.ChaptersFor(reopened.Books[0]);
+        Check(stored != null && stored.Count == 2 && stored[1].Title == "第二章", "chapter sidecar survives restart");
+        string backup = Path.Combine(root, "chapters.zip");
+        LibraryArchive.Export(reopened, backup);
+        var destination = new Store(Path.Combine(root, "restored"));
+        Check(LibraryArchive.Import(destination, backup) == 1, "archive imports a book with a chapter index");
+        var restoredChapters = destination.ChaptersFor(destination.Books[0]);
+        Check(restoredChapters != null && restoredChapters.Count == 2, "archive preserves the chapter index");
+    }
+    finally { Directory.Delete(root, true); }
 }
 
 static async Task LargeEpub()

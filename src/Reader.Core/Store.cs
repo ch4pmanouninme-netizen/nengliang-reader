@@ -127,17 +127,68 @@ namespace Reader.Core;
         public static int Clamp(int n, int min, int max) { return Math.Max(min, Math.Min(max, n)); }
         public string TextFor(Book b) { return File.ReadAllText(Path.Combine(Root, "books", b.Id + ".txt"), Encoding.UTF8); }
 
-        public Book Add(string title, string text, string format)
+        private const long ChapterIndexLimit = 4L * 1024 * 1024;
+
+        private string ChaptersPath(string id) => Path.Combine(Root, "books", id + ".chapters.tsv");
+
+        /// <summary>读取随书保存的章节索引；没有、损坏或超限时返回 null，阅读端会回退到标题识别。</summary>
+        public IReadOnlyList<Chapter> ChaptersFor(Book book)
+        {
+            try
+            {
+                string path = ChaptersPath(book.Id);
+                FileInfo info = new FileInfo(path);
+                if (!info.Exists || info.Length > ChapterIndexLimit) return null;
+                List<Chapter> chapters = new List<Chapter>();
+                foreach (string line in File.ReadAllLines(path, Encoding.UTF8))
+                {
+                    int tab = line.IndexOf('\t');
+                    if (tab <= 0 || !Int32.TryParse(line.AsSpan(0, tab), out int position) || position < 0) continue;
+                    string title = line[(tab + 1)..].Trim();
+                    if (title.Length > 0) chapters.Add(new Chapter(title, position));
+                }
+                // sidecar 正常由导入器按位置写出；这里再排一次，防御手工修改或旧版本文件。
+                chapters.Sort((left, right) => left.Position.CompareTo(right.Position));
+                return chapters.Count == 0 ? null : chapters;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+        }
+
+        /// <summary>写入章节索引。失败不影响正文导入，阅读端会回退到启发式识别。</summary>
+        public void WriteChapters(Book book, IReadOnlyList<Chapter> chapters)
+        {
+            if (chapters == null || chapters.Count == 0) return;
+            string target = ChaptersPath(book.Id), temporary = target + ".tmp";
+            StringBuilder text = new StringBuilder();
+            foreach (Chapter chapter in chapters)
+                text.Append(chapter.Position).Append('\t').Append(chapter.Title.Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' ')).Append('\n');
+            try
+            {
+                File.WriteAllText(temporary, text.ToString(), new UTF8Encoding(false));
+                File.Move(temporary, target, true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                try { File.Delete(temporary); } catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException) { }
+            }
+        }
+
+        /// <summary>
+        /// 加入一本书。EPUB 调用方可以同时传入书内目录生成的章节索引；
+        /// 索引写成与正文同名的 sidecar（books/&lt;id&gt;.chapters.tsv），不进入 state.xml。
+        /// </summary>
+        public Book Add(string title, string text, string format, IReadOnlyList<Chapter> chapters = null)
         {
             if (String.IsNullOrWhiteSpace(text)) throw new InvalidDataException("文件中没有可阅读的正文。");
             string id;
             using (SHA256 hash = SHA256.Create()) id = String.Concat(hash.ComputeHash(Encoding.UTF8.GetBytes(text)).Select(x => x.ToString("x2")));
             Book existing = Books.FirstOrDefault(b => b.Id == id);
-            if (existing != null) return existing;
+            if (existing != null) { WriteChapters(existing, chapters); return existing; }
             string path = Path.Combine(Root, "books", id + ".txt");
             if (!File.Exists(path)) File.WriteAllText(path, text, new UTF8Encoding(false));
             Book book = new Book { Id = id, Title = title, Format = format, Length = text.Length };
             Books.Insert(0, book);
+            WriteChapters(book, chapters);
             return book;
         }
 

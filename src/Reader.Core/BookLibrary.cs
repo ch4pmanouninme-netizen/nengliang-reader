@@ -163,6 +163,9 @@ public sealed partial class Store
                 try { File.Delete(staged); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
             }
+            // 章节索引是附属文件；删除失败不影响书籍移除，下次同名导入会重新生成。
+            try { File.Delete(Path.Combine(Root, "books", book.Id + ".chapters.tsv")); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
             return true;
         }
         catch
