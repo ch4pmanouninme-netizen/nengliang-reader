@@ -97,7 +97,11 @@ internal sealed class GroupWindow : Window
     private void Refresh(string? keep)
     {
         string? selection = keep ?? (list.SelectedItem as Entry)?.Name;
-        Entry[] entries = store.GroupNames.Select(name => new Entry(name, store.GetBooks(name).Length)).ToArray();
+        // 一次遍历统计每组的书数；不要再对每个分组调用 GetBooks（过滤 + 排序 + 分配）。
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var book in store.Books)
+            if (book.Group.Length > 0) counts[book.Group] = counts.TryGetValue(book.Group, out int count) ? count + 1 : 1;
+        Entry[] entries = store.GroupNames.Select(name => new Entry(name, counts.TryGetValue(name, out int count) ? count : 0)).ToArray();
         list.ItemsSource = entries;
         list.SelectedItem = entries.FirstOrDefault(entry => string.Equals(entry.Name, selection, StringComparison.OrdinalIgnoreCase))
             ?? entries.FirstOrDefault();

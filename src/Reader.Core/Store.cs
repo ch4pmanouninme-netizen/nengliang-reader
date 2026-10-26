@@ -187,8 +187,7 @@ namespace Reader.Core;
         public Book Add(string title, string text, string format, IReadOnlyList<Chapter> chapters = null)
         {
             if (String.IsNullOrWhiteSpace(text)) throw new InvalidDataException("文件中没有可阅读的正文。");
-            string id;
-            using (SHA256 hash = SHA256.Create()) id = String.Concat(hash.ComputeHash(Encoding.UTF8.GetBytes(text)).Select(x => x.ToString("x2")));
+            string id = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
             // 先落盘再判断重复：已存在的书也可能因为旧版本的半截写入而需要修复。
             WriteText(id, text);
             Book existing = Books.FirstOrDefault(b => b.Id == id);

@@ -54,7 +54,11 @@ class Test
             Console.WriteLine("PASS: 27 official themes update live window, button, input and header brushes; preferences persist; presets and unknown/legacy IDs remain compatible.");
             return 0;
         }
-        finally { window.Close(); }
+        finally
+        {
+            window.Close();
+            try { Directory.Delete(data, true); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
     }
     static void Check(IBrush? brush, string expected, string name)
     {

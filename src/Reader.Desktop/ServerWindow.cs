@@ -43,6 +43,7 @@ internal sealed class ServerWindow : Window
     private bool confirmed, confirming;
     private bool readingTheme, closed;
     private (DateTime Modified, long Length)? themeStamp;
+    private (string Theme, bool Dark)? appliedTheme;
 
     private static string AgentPath => Path.Combine(Program.DataDirectory ?? DataPaths.Default, "agent.xml");
 
@@ -171,7 +172,12 @@ internal sealed class ServerWindow : Window
                 themeStamp = stamp;
                 return pref == null ? null : new Preferences { UiDark = (string?)pref.Attribute("uiDark") == "true", UiTheme = (string?)pref.Attribute("uiTheme") ?? "" };
             });
-            if (!closed && appearance != null) UiThemes.Apply(appearance);
+            // state.xml 会因为阅读进度频繁重写；主题没变时不要重建整套调色板。
+            if (!closed && appearance != null && appliedTheme != (appearance.UiTheme, appearance.UiDark))
+            {
+                UiThemes.Apply(appearance);
+                appliedTheme = (appearance.UiTheme, appearance.UiDark);
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or XmlException) { /* Keep last appearance during an atomic save. */ }
         finally { readingTheme = false; }

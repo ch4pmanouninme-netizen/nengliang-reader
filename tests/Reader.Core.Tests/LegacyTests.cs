@@ -31,6 +31,11 @@ namespace Reader.Core.Tests
                 string input = "  你好，世界。\r\n\r\n第二段，保留 & 符号和 emoji 😊。  \n第三段。";
                 string expected = "你好，世界。\n第二段，保留 & 符号和 emoji 😊。\n第三段。";
                 Check(Importer.Normalize(input) == expected, "normalize paragraphs without losing content");
+                Check(Importer.Normalize(new string((char)0xFEFF, 2) + "A\t\tB") == "A B", "normalize strips repeated BOM and folds tabs");
+                Check(Importer.Normalize("A\rB") == "A\nB", "normalize treats a lone carriage return as a line break");
+                Check(Importer.Normalize("A" + new string((char)0x00A0, 2) + "B") == "A B", "normalize folds NBSP runs");
+                Check(Importer.Normalize("A" + new string((char)0x3000, 2) + "B") == "A B", "normalize folds ideographic space runs");
+                Check(Importer.Normalize("  " + (char)0x2003 + "A" + (char)0x2003 + "  ") == "A", "normalize trims all Unicode whitespace at line edges");
                 string utf8 = Path.Combine(root, "utf8.txt"); File.WriteAllText(utf8, input, new UTF8Encoding(true));
                 Check(Importer.Read(utf8).Text == expected, "UTF-8 BOM import");
                 string gb = Path.Combine(root, "gb18030.txt"); File.WriteAllText(gb, input, Encoding.GetEncoding(54936));

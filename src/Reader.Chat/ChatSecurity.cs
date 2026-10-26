@@ -29,9 +29,7 @@ namespace Reader.Chat
             }
         }
         public static string Fingerprint(X509Certificate certificate)
-        {
-            using (SHA256 hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(certificate.GetRawCertData())).Replace("-", "");
-        }
+            => Convert.ToHexString(SHA256.HashData(certificate.GetRawCertData()));
         public static bool ValidFingerprint(string value)
         {
             if (value == null || value.Length != 64) return false;

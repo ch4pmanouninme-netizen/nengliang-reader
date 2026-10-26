@@ -379,8 +379,8 @@ namespace Reader.Chat
             return new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(60) };
         }
 
-        // Returns the full reply; onDelta also receives it incrementally when the endpoint streams.
-        public string Ask(string prompt, CancellationToken token, Action<string> onDelta)
+        // 只通过 onDelta 回报内容；调用方不需要完整副本，避免长回答在内存里留两份。
+        public void Ask(string prompt, CancellationToken token, Action<string> onDelta)
         {
             using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, options.Endpoint))
             {
@@ -394,7 +394,10 @@ namespace Reader.Chat
                     string type = response.Content.Headers.ContentType == null ? "" : response.Content.Headers.ContentType.ToString();
                     using (Stream output = response.Content.ReadAsStream(token))
                     using (StreamReader reader = new StreamReader(output, new UTF8Encoding(false)))
-                        return type.IndexOf("event-stream", StringComparison.OrdinalIgnoreCase) >= 0 ? ReadStream(reader, onDelta, token) : ReadWhole(reader.ReadToEnd(), onDelta);
+                    {
+                        if (type.IndexOf("event-stream", StringComparison.OrdinalIgnoreCase) >= 0) ReadStream(reader, onDelta, token);
+                        else ReadWhole(reader.ReadToEnd(), onDelta);
+                    }
                 }
             }
         }
@@ -407,9 +410,8 @@ namespace Reader.Chat
             return json.Append("{\"role\":\"user\",\"content\":").Append(AgentJson.Quote(prompt)).Append("}]}").ToString();
         }
 
-        private string ReadStream(StreamReader reader, Action<string> onDelta, CancellationToken token)
+        private void ReadStream(StreamReader reader, Action<string> onDelta, CancellationToken token)
         {
-            StringBuilder total = new StringBuilder();
             while (!token.IsCancellationRequested)
             {
                 string line = reader.ReadLine();
@@ -422,9 +424,8 @@ namespace Reader.Chat
                 try { delta = Delta(payload); }
                 catch (InvalidDataException) { continue; }   // ignore keep-alive and comment frames
                 if (String.IsNullOrEmpty(delta)) continue;
-                total.Append(delta); onDelta(delta);
+                onDelta(delta);
             }
-            return total.ToString();
         }
 
         private static string Delta(string json)
@@ -435,7 +436,7 @@ namespace Reader.Chat
             return AgentJson.Text(root, "choices", "0", "delta", "content");
         }
 
-        private static string ReadWhole(string json, Action<string> onDelta)
+        private static void ReadWhole(string json, Action<string> onDelta)
         {
             object root = AgentJson.Parse(json);
             string error = AgentJson.Text(root, "error", "message");
@@ -443,7 +444,6 @@ namespace Reader.Chat
             string content = AgentJson.Text(root, "choices", "0", "message", "content");
             if (content == null) throw new InvalidDataException("Agent 返回的内容无法识别。");
             onDelta(content);
-            return content;
         }
     }
 

@@ -72,6 +72,10 @@ class Test
             Check(compose.Text.Contains('\n') && !packets.Any(p=>p.Text.Contains("保留换行")), "Shift+Enter inserts newline without sending");
             Check(packets.Count(p=>p.Text == "Enter发送验证") == 1, "Enter does not send duplicates");
         }
-        finally { window.Close(); }
+        finally
+        {
+            window.Close();
+            try { Directory.Delete(data, true); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
     }
 }

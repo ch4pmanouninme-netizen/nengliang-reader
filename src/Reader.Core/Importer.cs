@@ -39,6 +39,12 @@ public static class Importer
     // container.xml / OPF 等索引文件通常只有几十 KB；单独设限，避免误用正文上限。
     private const int XmlLimit = 4 * 1024 * 1024;
 
+    // 逐章处理时复用编译后的正则；带超时的静态 Regex.Replace 重载不会命中缓存。
+    private static readonly Regex HtmlBlocks = new(@"<(script|style|head|svg)\b[^>]*>.*?</\1\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline, TimeSpan.FromSeconds(3));
+    private static readonly Regex HtmlComments = new(@"<!--.*?-->", RegexOptions.Singleline, TimeSpan.FromSeconds(3));
+    private static readonly Regex HtmlBreaks = new(@"<(br|hr)\b[^>]*>|</(p|div|h[1-6]|li|section|article|blockquote|tr)\s*>", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(3));
+    private static readonly Regex HtmlTags = new(@"<[^>]+>", RegexOptions.None, TimeSpan.FromSeconds(3));
+
     /// <summary>
     /// 读取一本书。<paramref name="progress"/> 为 null 时不做进度回报。
     /// EPUB 按 spine 顺序逐章回报（单位：章），TXT 只有开始/结束两拍（单位：1）。
@@ -83,8 +89,44 @@ public static class Importer
     /// </summary>
     public static string Normalize(string text)
     {
-        text = text.TrimStart('﻿').Replace("\r\n", "\n").Replace('\r', '\n');
-        return String.Join("\n", text.Split('\n').Select(line => Regex.Replace(line, "[\\t \\u00a0\\u3000]+", " ").Trim()).Where(line => line.Length > 0));
+        if (String.IsNullOrEmpty(text)) return "";
+        StringBuilder result = new StringBuilder(text.Length);
+        int start = 0;
+        while (start < text.Length && text[start] == '﻿') start++;
+        int position = start;
+        bool firstLine = true;
+        while (position < text.Length)
+        {
+            // 行边界：\n、\r\n 或单独的 \r。
+            int end = position;
+            while (end < text.Length && text[end] != '\n' && text[end] != '\r') end++;
+            ReadOnlySpan<char> line = text.AsSpan(position, end - position).Trim();
+            if (line.Length > 0)
+            {
+                if (!firstLine) result.Append('\n');
+                firstLine = false;
+                AppendCollapsed(result, line);
+            }
+            if (end < text.Length)
+            {
+                if (text[end] == '\r' && end + 1 < text.Length && text[end + 1] == '\n') end += 2;
+                else end++;
+            }
+            position = end;
+        }
+        return result.ToString();
+    }
+
+    // 与旧实现的 "[\\t \\u00a0\\u3000]+" 完全一致：只折叠这四类行内空白。
+    private static void AppendCollapsed(StringBuilder result, ReadOnlySpan<char> line)
+    {
+        bool pendingSpace = false;
+        foreach (char c in line)
+        {
+            if (c is '\t' or ' ' or ' ' or '　') { pendingSpace = true; continue; }
+            if (pendingSpace) { result.Append(' '); pendingSpace = false; }
+            result.Append(c);
+        }
     }
 
     /// <summary>解析 EPUB 内的 XML 索引；禁用 DTD 与外部解析器，避免 XXE 与外部实体。</summary>
@@ -203,11 +245,11 @@ public static class Importer
             for (int index = 0; index < chapters.Count; index++)
             {
                 string html = EntryText(zip, chapters[index], ref total);
-                // 提取纯文本。每个正则都带 3 秒超时，防止畸形章节把导入拖死。
-                html = Regex.Replace(html, @"<(script|style|head|svg)\b[^>]*>.*?</\1\s*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline, TimeSpan.FromSeconds(3));
-                html = Regex.Replace(html, @"<!--.*?-->", "", RegexOptions.Singleline, TimeSpan.FromSeconds(3));
-                html = Regex.Replace(html, @"<(br|hr)\b[^>]*>|</(p|div|h[1-6]|li|section|article|blockquote|tr)\s*>", "\n", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(3));
-                html = Regex.Replace(html, @"<[^>]+>", "", RegexOptions.None, TimeSpan.FromSeconds(3));
+                // 提取纯文本。复用带 3 秒超时的编译正则，防止畸形章节把导入拖死。
+                html = HtmlBlocks.Replace(html, "");
+                html = HtmlComments.Replace(html, "");
+                html = HtmlBreaks.Replace(html, "\n");
+                html = HtmlTags.Replace(html, "");
                 string text = Normalize(WebUtility.HtmlDecode(html));
                 // 每章已经 Normalize 过，直接用单个换行拼接即可。若对全书再 Normalize 一次，
                 // 等于把上千万字符重新拆行再拼回去，纯属浪费。
