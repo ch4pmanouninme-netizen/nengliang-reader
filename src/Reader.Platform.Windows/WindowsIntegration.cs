@@ -16,6 +16,8 @@ public sealed class WindowsIntegration : IDisposable
     private readonly Action<int> pressed;
     // 线程 ID 用于 Dispose 时向该线程投递 WM_QUIT。
     private uint threadId;
+    // 防止重复 Dispose 再次向可能已被复用的线程 ID 投递 WM_QUIT。
+    private int disposed;
     /// <summary>注册失败的热键 ID 列表；构造函数返回后即可读取。</summary>
     public List<int> Failed { get; } = [];
 
@@ -83,6 +85,7 @@ public sealed class WindowsIntegration : IDisposable
     /// <remarks>最多等待 2 秒；线程是后台线程，即使未及时退出也不会阻止进程结束。</remarks>
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
         // 0x0012 = WM_QUIT；向消息循环线程投递后等待其注销热键并返回。
         PostThreadMessage(threadId, 0x0012, UIntPtr.Zero, IntPtr.Zero);
         thread.Join(TimeSpan.FromSeconds(2));

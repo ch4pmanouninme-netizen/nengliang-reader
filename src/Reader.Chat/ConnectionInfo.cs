@@ -11,9 +11,11 @@ public sealed record ConnectionInfo(string Host, int Port, string Code, string F
     /// <exception cref="ArgumentException">地址、端口、房间码或指纹不符合协议要求。</exception>
     public void Validate()
     {
+        // 直接构造时 Code 可能为 null；先归一为空串，让调用方拿到 ArgumentException 而不是 NullReferenceException。
+        string code = Code ?? "";
         // 控制字符会破坏后续粘贴文本的行结构，必须和长度、端口范围、指纹格式一起校验。
         if (string.IsNullOrWhiteSpace(Host) || Host.Length > 253 || Host.Any(char.IsControl) || Port is < 1 or > 65535
-            || Code.Length is < 6 or > 64 || Code.Any(char.IsControl) || !ChatSecurity.ValidFingerprint(Fingerprint))
+            || code.Length is < 6 or > 64 || code.Any(char.IsControl) || !ChatSecurity.ValidFingerprint(Fingerprint))
             throw new ArgumentException("请填写完整的地址、端口、6～64 位房间码和 64 位服务指纹。");
     }
     /// <summary>从用户粘贴的连接文本中解析出连接信息。</summary>

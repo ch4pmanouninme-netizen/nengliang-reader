@@ -18,6 +18,9 @@ namespace Reader.Core;
     {
         // 所有落盘操作共用同一把锁：state.xml、正文和章节索引不会互相穿插写入。
         private readonly SemaphoreSlim writes = new(1, 1);
+        // 快照版本在 snapshotGate 内递增：版本更大代表内容更新，落盘时据此跳过过期快照。
+        private readonly object snapshotGate = new();
+        private long snapshotVersion;
         /// <summary>书库数据根目录。</summary>
         public readonly string Root;
         /// <summary>内存中的书籍列表，顺序即书库显示顺序（新书插入最前）。</summary>
@@ -275,24 +278,41 @@ namespace Reader.Core;
         }
 
         /// <summary>同步保存书库索引；与异步保存共用同一把写锁。</summary>
-        /// <remarks>快照在调用线程生成，写锁只保证落盘顺序。</remarks>
+        /// <remarks>快照在调用线程生成，写锁只保证落盘顺序；已有更新快照排队时会跳过本次。</remarks>
         public void Save()
         {
-            // 先在调用线程生成快照，再取锁落盘；锁不保护内存状态的读取。
-            XElement snapshot = Snapshot();
+            (XElement snapshot, long version) = CaptureSnapshot();
             writes.Wait();
-            try { WriteSnapshot(snapshot); }
+            try
+            {
+                // 并发保存时只让最新的快照落盘，防止旧状态覆盖新状态。
+                if (version == Volatile.Read(ref snapshotVersion)) WriteSnapshot(snapshot);
+            }
             finally { writes.Release(); }
         }
 
         /// <summary>异步保存书库索引；快照在调用线程生成，落盘在线程池执行。</summary>
+        /// <remarks>与同步保存共享写锁和快照版本，旧快照不会覆盖新快照。</remarks>
         public async Task SaveAsync()
         {
             // Capture mutable reading state on its owner thread before yielding.
-            XElement snapshot = Snapshot();
+            (XElement snapshot, long version) = CaptureSnapshot();
             await writes.WaitAsync().ConfigureAwait(false);
-            try { await Task.Run(() => WriteSnapshot(snapshot)).ConfigureAwait(false); }
+            try
+            {
+                if (version == Volatile.Read(ref snapshotVersion))
+                    await Task.Run(() => WriteSnapshot(snapshot)).ConfigureAwait(false);
+            }
             finally { writes.Release(); }
+        }
+
+        // 串行化“生成快照 + 分配版本”，保证版本顺序与内容顺序一致；读取仍在调用线程完成。
+        private (XElement Snapshot, long Version) CaptureSnapshot()
+        {
+            lock (snapshotGate)
+            {
+                return (Snapshot(), ++snapshotVersion);
+            }
         }
 
         // 把当前内存状态序列化成独立 XML 树；落盘时不再访问可变字段，避免并发修改写进文件。

@@ -118,19 +118,20 @@ public static class ControlChannel
         await stream.FlushAsync();
     }
 
-    // 逐字节读取以避免预读超出本行；换行即返回，EOF 返回 null，达到上限则截断返回。
+    // 逐字节读取以避免预读超出本行；按字节上限截断，凑齐一行后再按 UTF-8 解码。
     private static async Task<string?> ReadLineAsync(Stream stream)
     {
         byte[] single = new byte[1];
-        var text = new StringBuilder();
-        while (text.Length < MaxLineBytes)
+        using var bytes = new MemoryStream();
+        while (bytes.Length < MaxLineBytes)
         {
             if (await stream.ReadAsync(single) == 0) return null;
             // 兼容 CRLF：协议行尾的 \r 不属于命令内容。
-            if (single[0] == (byte)'\n') return text.ToString().TrimEnd('\r');
-            text.Append((char)single[0]);
+            if (single[0] == (byte)'\n')
+                return Wire.GetString(bytes.GetBuffer(), 0, (int)bytes.Length).TrimEnd('\r');
+            bytes.WriteByte(single[0]);
         }
-        return text.ToString();
+        return Wire.GetString(bytes.GetBuffer(), 0, (int)bytes.Length);
     }
 
     // A copy without a control channel (an older build) still holds the single-instance lock,

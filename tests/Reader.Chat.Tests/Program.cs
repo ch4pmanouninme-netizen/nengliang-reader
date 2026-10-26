@@ -64,6 +64,11 @@ try
     Check(ConnectionInfo.Parse(info.ToString()) == info, "upstream connection text roundtrip");
     Check(ConnectionInfo.Parse(info.ToString().Replace("良子小窗-v" + version, "良子小窗 1.5")) == info, "legacy 1.5 connection text remains readable");
     await Reject(() => { ConnectionInfo.Parse("服务地址：127.0.0.1"); return Task.CompletedTask; }, "incomplete connection info rejected");
+    // 直接构造时房间码可能为 null；校验应给出 ArgumentException，而不是 NullReferenceException。
+    bool nullCodeRejected = false;
+    try { new ConnectionInfo("127.0.0.1", 1, null, new string('A', 64)).Validate(); }
+    catch (ArgumentException) { nullCodeRejected = true; }
+    Check(nullCodeRejected, "connection info rejects a missing room code without a NullReferenceException");
     using var alice = new ChatConnection(); using var bob = new ChatConnection();
     var received = new ConcurrentQueue<ChatPacket>(); bob.Received += received.Enqueue;
     await alice.ConnectAsync(info.Host, info.Port, "Alice", room, pin); await bob.ConnectAsync(info.Host, info.Port, "Bob", room, pin);
@@ -109,6 +114,8 @@ try
     Check(AgentJson.Text(parsed, "choices", "0", "delta", "content") == "你好\n世界 中", "agent reader extracts nested streamed content and decodes escapes");
     Check(AgentJson.Text(parsed, "choices", "0", "gone") == null && AgentJson.Text(parsed, "nope", "0") == null, "missing agent JSON paths return null rather than throwing");
     Check(AgentJson.Quote("a\"b\\c\nd\u0001") == "\"a\\\"b\\\\c\\nd\\u0001\"", "agent request encoder escapes quotes backslashes and control characters");
+    // @ 提及必须是完整昵称：@小助手 不能匹配 @小助手2。
+    Check(AgentBridge.Mentions("@小助手 你好", "小助手") && !AgentBridge.Mentions("@小助手2 你好", "小助手"), "agent mentions require a complete nickname");
 
     // 分片必须在代理对边界切分，且每片不超过房间消息长度，拼回后与原文一致。
     string emoji = new string('字', 19) + "😊" + new string('字', 300);

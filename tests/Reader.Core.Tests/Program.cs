@@ -34,6 +34,16 @@ try
         Check(served == 2, "control channel serves repeated requests");
         control.Cancel();
     }
+    // 控制通道必须按 UTF-8 解码应答；非 ASCII 文本不能按单字节直接转 char。
+    string unicodeRoot = Path.Combine(root, "control-unicode");
+    using (var unicode = new CancellationTokenSource())
+    {
+        var unicodeListening = new TaskCompletionSource();
+        _ = ControlChannel.ServeAsync(unicodeRoot, _ => Task.FromResult("关闭成功"), unicode.Token, () => unicodeListening.TrySetResult());
+        await unicodeListening.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Check(await ControlChannel.TrySendAsync(unicodeRoot, ControlChannel.ShutdownCommand, TimeSpan.FromSeconds(10)) == "关闭成功", "control channel round-trips UTF-8 replies");
+        unicode.Cancel();
+    }
     Check(await ControlChannel.TrySendAsync(controlRoot, ControlChannel.ShutdownCommand, TimeSpan.FromSeconds(2)) == null, "control channel reports silence once the server is gone");
     // A copy too old to serve the channel still holds the lock. That is the only way the launcher
     // can tell "nothing is running" apart from "something is running but will not answer".

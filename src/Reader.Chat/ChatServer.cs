@@ -230,6 +230,8 @@ namespace Reader.Chat
             lock (gate)
             {
                 foreach (ServerGuest guest in pending) guest.Dispose();
+                // 已加入的成员也要主动关闭；否则它们的读循环要等 45 秒超时，客户端不会及时断开。
+                foreach (ServerGuest guest in guests) guest.Dispose();
                 pending.Clear(); guests.Clear(); history.Clear(); attempts.Clear(); Array.Clear(codeHash, 0, codeHash.Length); Volatile.Write(ref online, 0);
             }
             // 只释放自己创建的证书；外部传入的证书由调用方负责。

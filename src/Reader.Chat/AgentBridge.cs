@@ -687,7 +687,7 @@ namespace Reader.Chat
             // 只处理普通消息；状态帧、历史回放等不进入提问队列。
             if (packet.Kind != "message") return;
             if (String.Equals(packet.Nick, options.Nick, StringComparison.OrdinalIgnoreCase)) return;   // never answer itself, or the room loops forever
-            if (options.MentionOnly && (packet.Text ?? "").IndexOf("@" + options.Nick, StringComparison.OrdinalIgnoreCase) < 0) return;
+            if (options.MentionOnly && !Mentions(packet.Text, options.Nick)) return;
             lock (gate)
             {
                 // 队列有界：满时丢弃新问题，保持已排队问题的顺序与响应性。
@@ -696,6 +696,23 @@ namespace Reader.Chat
             }
             Pump();
         }
+
+        // 提及必须是完整昵称：@bot 不能匹配 @bot2，避免相邻昵称互相触发。
+        internal static bool Mentions(string text, string nick)
+        {
+            if (String.IsNullOrEmpty(text) || String.IsNullOrEmpty(nick)) return false;
+            string token = "@" + nick;
+            int index = text.IndexOf(token, StringComparison.OrdinalIgnoreCase);
+            while (index >= 0)
+            {
+                int end = index + token.Length;
+                if (end >= text.Length || !IsNickChar(text[end])) return true;
+                index = text.IndexOf(token, index + 1, StringComparison.OrdinalIgnoreCase);
+            }
+            return false;
+        }
+
+        private static bool IsNickChar(char c) => Char.IsLetterOrDigit(c) || c == '_';
 
         private void Pump()
         {
