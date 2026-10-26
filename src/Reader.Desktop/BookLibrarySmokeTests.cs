@@ -8,22 +8,30 @@ using Reader.Core;
 
 namespace Reader.Desktop;
 
+// 书库界面冒烟测试（MainWindow 的 partial 部分）：在真实窗口、列表行和右键菜单上验证批量操作与持久化。
 internal sealed partial class MainWindow
 {
+    // 仅在 --smoke-test 下由 MainWindow.SmokeTest 调用；所有测试数据都写在隔离的 --data 目录。
     private async Task RunBookLibrarySmoke()
     {
         int checks = 0;
+        // 条件不满足立即失败，计数用于最后生成冒烟报告。
         void Check(bool condition, string message) { if (!condition) throw new InvalidOperationException("Book library UI: " + message); checks++; }
+        // UI 与存储操作是异步的，用轮询等待状态稳定，超时视为失败。
         async Task Wait(Func<bool> condition)
         {
             DateTime end = DateTime.UtcNow.AddSeconds(8);
             while (!condition() && DateTime.UtcNow < end) await Task.Delay(30);
             Check(condition(), "timed out waiting for book operation");
         }
+        // 菜单项按 Name 查找，断言文案时再单独比较 Header。
         MenuItem Item(ContextMenu menu, string name) => menu.Items.OfType<MenuItem>().Single(item => item.Name == name);
+        // 直接触发 RoutedEvent，等价于用户点击该菜单项。
         void Click(MenuItem item) => item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        // 在真实列表容器上模拟右键，验证命中区域、选中保持和菜单内容。
         async Task<ContextMenu> RowMenu(Book target)
         {
+            // 列表启用虚拟化，先滚动到目标让其容器生成。
             books.ScrollIntoView(target);
             await Wait(() => books.ContainerFromItem(target) is Control);
             var container = books.ContainerFromItem(target) as Control;
@@ -32,6 +40,7 @@ internal sealed partial class MainWindow
             Check(row.Bounds.Width >= container!.Bounds.Width - 30, "right-click target covers the book row width");
             var menu = row.ContextMenu!;
             object? selected = books.SelectedItem;
+            // 构造右键按下事件，而不是直接调用菜单逻辑，以便覆盖 Tunnel 处理器。
             var pointer = new Pointer(1, PointerType.Mouse, true);
             var point = row.TranslatePoint(new Avalonia.Point(8, 8), this) ?? new Avalonia.Point(0, 0);
             row.RaiseEvent(new PointerPressedEventArgs(row, pointer, this, point, 0,
@@ -41,6 +50,7 @@ internal sealed partial class MainWindow
             Check(menu.IsOpen && Item(menu, "DeleteBook").Header?.ToString() == "删除", "right-click menu opens on the actual book row");
             return menu;
         }
+        // 删除确认框是模态窗口，测试通过窗口集合找到它并点击指定按钮。
         async Task AnswerDelete(bool confirm)
         {
             var lifetime = (IClassicDesktopStyleApplicationLifetime)Avalonia.Application.Current!.ApplicationLifetime!;
@@ -51,8 +61,10 @@ internal sealed partial class MainWindow
         }
 
         Book active = session!.Book;
+        // 固定阅读进度和书签，后续用它验证批量操作不会误伤当前阅读状态。
         active.Position = 2; active.Bookmark = 4; MarkDirty();
         var target = store.Add("书库操作测试", "右键操作只影响对应的书。\n用于置顶分组和删除测试。", "TXT");
+        // 测试直接驱动刷新，临时置 busy 防止 SelectionChanged 触发异步切换书籍。
         busy = true; RefreshBooks(active.Id, true); busy = false;
         var menu = await RowMenu(target); menu.Close(); Click(Item(menu, "PinBook"));
         await Wait(() => !busy && target.IsPinned);
@@ -97,6 +109,7 @@ internal sealed partial class MainWindow
         var managed = store.Add("受管理书", "分组管理窗口的测试书。", "TXT");
         await store.SetGroupAsync(managed, "受管理组");
         busy = true; RefreshBooks(active.Id, true); busy = false;
+        // 分组窗口是异步模态的，这里不 await，改为等待窗口出现在窗口集合中。
         _ = ManageGroups();
         await Wait(() => appLifetime.Windows.Any(window => window.Name == "GroupDialog"));
         var groupUi = appLifetime.Windows.Single(window => window.Name == "GroupDialog");
@@ -161,6 +174,7 @@ internal sealed partial class MainWindow
 
         await store.SetPinnedAsync(active, true); await store.SetGroupAsync(active, "小说");
         busy = true; RefreshBooks(active.Id, true); busy = false; await SelectBook(active);
+        // 截图落在隔离数据目录，供人工查看最终列表与右键菜单外观。
         await Task.Delay(100); Capture(this, "book-library.png");
         menu = await RowMenu(active);
         if (menu.GetVisualRoot() is Control popup)
@@ -170,6 +184,7 @@ internal sealed partial class MainWindow
         }
         menu.Close();
         Check(new Store(store.Root).Books.All(book => book.Id != target.Id && book.Id != current.Id), "deleted rows remain absent after reloading saved state");
+        // 标记文件是冒烟测试成功的信号，同时记录实际执行的检查数量。
         File.WriteAllText(Path.Combine(store.Root, "book-library-smoke.ok"), $"{checks} checks: actual row menus, pin/unpin, new groups, filtering, ungrouping, cancel/confirm deletion, active reader cleanup, persistence.");
     }
 }

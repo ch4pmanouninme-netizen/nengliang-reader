@@ -21,12 +21,16 @@ internal sealed class ChapterDialog : Window
     private readonly TextBlock count = new() { Foreground = Brushes.Gray, FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
     private readonly Button jump = new() { Content = "跳转", IsDefault = true };
 
+    /// <summary>创建章节选择窗口。</summary>
+    /// <param name="chapters">完整章节列表，按位置升序排列。</param>
+    /// <param name="position">当前阅读位置，用于自动选中所在章节。</param>
     public ChapterDialog(IReadOnlyList<Chapter> chapters, int position)
     {
         all = chapters;
         Title = "选择章节"; Icon = AppIcon.Shared;
         Width = 520; Height = 620; MinWidth = 380; MinHeight = 360;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        // 自定义模板配合 ListBox 的虚拟化：上千章时只创建可见行。
         list.ItemTemplate = new FuncDataTemplate<Chapter>((chapter, _) => chapter == null ? new TextBlock() : new TextBlock
         {
             Text = chapter.Title,
@@ -68,10 +72,12 @@ internal sealed class ChapterDialog : Window
                 // 等列表完成一次布局后再滚动，否则虚拟化容器还没生成，ScrollIntoView 不生效。
                 Dispatcher.UIThread.Post(() => list.ScrollIntoView(current), DispatcherPriority.Background);
             }
+            // 打开后直接进入筛选框，键盘用户可输入后回车跳转。
             filter.Focus();
         };
     }
 
+    // 按标题做不区分大小写的包含匹配；空查询恢复完整章节列表。
     private void ApplyFilter()
     {
         string query = (filter.Text ?? "").Trim();
@@ -84,6 +90,7 @@ internal sealed class ChapterDialog : Window
         if (query.Length > 0 && items.Count > 0) list.SelectedIndex = 0;
     }
 
+    // 关闭时把选中的 Chapter 作为 ShowDialog 的返回值；没有选中则保持窗口打开。
     private void Accept()
     {
         if (list.SelectedItem is Chapter chapter) Close(chapter);

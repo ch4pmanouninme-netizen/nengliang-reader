@@ -8,8 +8,13 @@ namespace Reader.Desktop;
 
 // 分组管理：新建（含空分组）、重命名、删除、上移/下移。所有校验失败都在窗口内提示，
 // 不像对话框那样一失败就把输入框关掉、让人重新敲一遍。
+/// <summary>
+/// 分组管理窗口：维护分组的增删改和显示顺序，并把操作结果即时刷新到列表。
+/// </summary>
+/// <remarks>所有操作都直接写入 <see cref="Store"/>；窗口本身不保存未提交的分组草稿。</remarks>
 internal sealed class GroupWindow : Window
 {
+    // 列表项：显示分组名和书数，空分组也保留在列表中。
     private sealed record Entry(string Name, int Count)
     {
         public override string ToString() => Count == 0 ? Name + "（空分组）" : $"{Name} · {Count} 本";
@@ -24,8 +29,11 @@ internal sealed class GroupWindow : Window
     private readonly Button up = new() { Name = "MoveGroupUp", Content = "上移" };
     private readonly Button down = new() { Name = "MoveGroupDown", Content = "下移" };
 
+    /// <summary>创建分组管理窗口。</summary>
+    /// <param name="store">书库存储；分组的增删改都直接作用于它。</param>
     public GroupWindow(Store store)
     {
+        // 名称供冒烟测试按窗口名定位这个模态对话框。
         Name = "GroupDialog";
         this.store = store;
         Title = "管理分组"; Icon = AppIcon.Shared;
@@ -73,8 +81,10 @@ internal sealed class GroupWindow : Window
         Refresh(null);
     }
 
+    // 当前选中的分组名；未选中时为空串，各操作据此直接返回。
     private string Selected => (list.SelectedItem as Entry)?.Name ?? "";
 
+    // step 为 -1 上移、1 下移；越界时 Store 会返回提示而不是抛异常。
     private async Task Move(int step)
     {
         string name = Selected;
@@ -107,6 +117,7 @@ internal sealed class GroupWindow : Window
             ?? entries.FirstOrDefault();
     }
 
+    // 重命名/删除需要选中项；上移/下移还要检查是否已在列表边界。
     private void UpdateEnabled()
     {
         int index = list.SelectedIndex;

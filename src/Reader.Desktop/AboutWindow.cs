@@ -6,10 +6,16 @@ using Reader.Core;
 
 namespace Reader.Desktop;
 
+/// <summary>
+/// 「关于」窗口：展示产品名、运行版本、应用图标与项目地址。
+/// </summary>
+/// <remarks>项目地址使用可选中文本而不是超链接，程序不会主动打开浏览器。</remarks>
 internal sealed class AboutWindow : Window
 {
+    /// <summary>创建「关于」窗口。</summary>
     public AboutWindow()
     {
+        // 名称供冒烟测试按窗口名定位这个模态对话框。
         Name = "AboutDialog";
         Title = "关于良子小窗"; Width = 420; SizeToContent = SizeToContent.Height;
         CanResize = false; WindowStartupLocation = WindowStartupLocation.CenterOwner;

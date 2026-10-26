@@ -13,17 +13,29 @@ using System.Reflection;
 
 namespace Reader.Desktop;
 
+/// <summary>
+/// 桌面端冒烟测试：用真实窗口、控件和临时聊天服务验证主页、聊天、托盘、快捷键和服务窗口的端到端行为。
+/// </summary>
+/// <remarks>
+/// 仅在 --smoke-test 下由 MainWindow 调用。测试通过反射读取私有控件并直接触发路由事件，
+/// 因此能在不为测试扩大生产 API 的前提下覆盖真实界面路径。
+/// </remarks>
 internal static class DesktopSmokeTests
 {
+    // 通过反射读取窗口私有字段，避免为测试暴露生产 API。
     private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;
+    // 直接触发 Click 路由事件，等价于用户点击该按钮。
     private static void Click(object target, string name) => Field<Button>(target, name).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+    // 条件不满足立即失败；异常由 MainWindow.SmokeTest 写入错误文件。
     private static void Check(bool condition, string message) { if (!condition) throw new InvalidOperationException("Desktop smoke: " + message); }
+    // UI 与网络状态都是异步变化的，用轮询等待，超时统一报错。
     private static async Task Wait(Func<bool> condition)
     {
         var end = DateTime.UtcNow.AddSeconds(12);
         while (!condition() && DateTime.UtcNow < end) await Task.Delay(30);
         Check(condition(), "timed out waiting for UI/network state");
     }
+    // 等待并返回服务窗口当前可见的确认框；同一时刻应只有一个。
     private static async Task<Window> Confirmation(Window owner)
     {
         await Wait(() => owner.OwnedWindows.Any(w => w.Name == "ConfirmationDialog" && w.IsVisible));
@@ -31,9 +43,15 @@ internal static class DesktopSmokeTests
     }
     private static Button DialogButton(Window dialog, string name) => dialog.GetVisualDescendants().OfType<Button>().Single(b => b.Name == name);
     private static void Answer(Window dialog, string name) => DialogButton(dialog, name).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+    // 读取服务内部的历史计数，验证“停止时清空历史”而不暴露生产接口。
     private static int HistoryCount(ChatServer server) => (int)typeof(ChatServer).GetProperty("HistoryCount", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(server)!;
+    /// <summary>运行整条桌面冒烟链路。</summary>
+    /// <param name="home">主页窗口，测试从它的真实入口进入聊天/设置/关于。</param>
+    /// <param name="library">书库窗口，用于验证全局隐藏、关闭和恢复。</param>
+    /// <param name="store">隔离数据目录中的存储，截图和成功标记都写在这里。</param>
     public static async Task Run(HomeWindow home, MainWindow library, Store store)
     {
+        // 从主页真实入口开始，覆盖窗口生命周期而不是直接构造子窗口。
         home.Restore();
         var lifetime = (IClassicDesktopStyleApplicationLifetime)Avalonia.Application.Current!.ApplicationLifetime!;
         Button ChoiceButton(Window dialog, string name) => dialog.GetVisualDescendants().OfType<Button>().Single(item => item.Name == name);
@@ -48,23 +66,28 @@ internal static class DesktopSmokeTests
         chat.Close(); Check(home.IsVisible && home.Chat == null, "closing chat preserves home");
         home.Hide(); home.OpenChat(); chat = home.Chat!;
         Check(!home.IsVisible, "opening chat preserves hidden home");
+        // 临时启动真实 TLS 服务，聊天窗口按正常输入路径验证地址、房间码和指纹。
         using var certificate = ChatSecurity.CreateCertificate();
         using var server = new ChatServer("smoke-room", certificate: certificate); server.Start(IPAddress.Loopback, 0);
         Field<TextBox>(chat, "host").Text = "127.0.0.1"; Field<TextBox>(chat, "port").Text = server.Port.ToString();
         Field<TextBox>(chat, "nick").Text = "窗口测试"; Field<TextBox>(chat, "code").Text = "smoke-room"; Field<TextBox>(chat, "pin").Text = server.Fingerprint;
         Click(chat, "connect");
+        // 连接失败时把状态栏内容带进异常，便于定位 TLS 或配置问题。
         try { await Wait(() => Field<Button>(chat, "send").IsEnabled); }
         catch (Exception ex) { throw new InvalidOperationException(Field<TextBlock>(chat, "state").Text, ex); }
+        // 另开一个客户端作为对端，验证双向收发。
         using var peer = new ChatConnection(); var packets = new ConcurrentQueue<ChatPacket>(); peer.Received += packets.Enqueue;
         await peer.ConnectAsync("127.0.0.1", server.Port, "对端", "smoke-room", server.Fingerprint);
         await peer.SendAsync("跨平台聊天 · 中文 😊"); await Wait(() => Field<TextBox>(chat, "transcript").Text?.Contains("跨平台聊天") == true);
         Field<TextBox>(chat, "compose").Text = "窗口发送"; Click(chat, "send"); await Wait(() => packets.Any(p => p.Text == "窗口发送"));
         Capture(chat, Path.Combine(store.Root, "chat.png"));
+        // 全局隐藏应覆盖所有可见模块，但聊天连接必须保留。
         home.Restore(); home.ToggleVisibility(); Check(!home.IsVisible && !chat.IsVisible && !library.IsVisible, "global hide covers all modules");
         Check(Field<ChatConnection>(chat, "connection").Connected, "hide retains connection");
         home.ToggleVisibility(); Check(chat.IsVisible && home.IsVisible, "global restore restores visible modules");
         home.Hide(); library.Close(); await Wait(() => !library.IsVisible);
         Check(chat.IsVisible && Field<ChatConnection>(chat, "connection").Connected && !home.IsVisible, "closing reader leaves chat and home alone");
+        // 停掉服务验证自动重连；重启后历史应重新拉取，不能残留旧消息。
         server.Dispose(); await Wait(() => !Field<Button>(chat, "send").IsEnabled);
         using var restart = new ChatServer("smoke-room", certificate: certificate); restart.Start(IPAddress.Loopback, server.Port);
         await Wait(() => Field<Button>(chat, "send").IsEnabled);
@@ -75,6 +98,7 @@ internal static class DesktopSmokeTests
         Check(!home.IsVisible, "closing chat preserves hidden home");
         home.Restore(); Capture(home, Path.Combine(store.Root, "home.png"));
         // First close with no exit choice: closing asks once, choosing tray remembers and hides.
+        // 首次关闭尚未保存选择，必须先弹出询问框。
         home.Close(); await Wait(() => lifetime.Windows.Any(window => window.Name == "ExitModeDialog"));
         var exitDialog = lifetime.Windows.Single(window => window.Name == "ExitModeDialog");
         Check(store.Pref.ExitMode == Preferences.ExitUnset, "first close asks because no exit choice was saved");
@@ -116,6 +140,7 @@ internal static class DesktopSmokeTests
         Check(lifetime.Windows.All(window => window.Name != "ChatModeDialog") && home.Chat == null, "cancel closes the choice without opening either chat mode");
         // Recording a combo only works if the system stops routing it to the app's own hotkeys first,
         // so the real registration is exercised here rather than assumed.
+        // 真实注册一次全局热键，覆盖重复注册、暂停和恢复语义。
         var held = new Hotkeys(store.Root, _ => { });
         Check(held.FailedCount == 0, "hotkeys register on this platform");
         var blocked = new Hotkeys(store.Root, _ => { });
@@ -182,7 +207,9 @@ internal static class DesktopSmokeTests
         Field<TextBox[]>(marked, "boxes")[1].Text = "F8";
         Check(markedErrors[1].Text == "", "editing a row clears its stale failure mark");
         marked.Close();
+        // 先探测一个空闲端口，避免测试与机器上已有服务冲突。
         var reserve = new TcpListener(IPAddress.Loopback, 0); reserve.Start(); int port = ((IPEndPoint)reserve.LocalEndpoint).Port; reserve.Stop();
+        // 服务窗口按真实按钮路径启动 TLS 服务，并验证确认框的取消/确认语义。
         var serviceUi = new ServerWindow(); serviceUi.Show();
         Field<ComboBox>(serviceUi, "address").SelectedItem = "127.0.0.1"; Field<TextBox>(serviceUi, "port").Text = port.ToString();
         Click(serviceUi, "toggle"); var service = Field<ChatServer>(serviceUi, "server");
@@ -252,11 +279,13 @@ internal static class DesktopSmokeTests
             await Wait(() => Field<ChatServer?>(lanUi, "server") == null && Field<AgentBridge?>(lanUi, "bridge") == null && lanService.Online == 0);
             lanUi.Close();
         }
+        // 两个标记文件分别对应服务确认流程与主页/聊天链路，供外部脚本判断结果。
         File.WriteAllText(Path.Combine(store.Root, "server-stop-confirmation-smoke.ok"), "Stop button and window close share the emoticon warning; duplicate requests, cancel, confirm, preserved history, idle controls and restart passed."
             + (lan == null ? " Assistant check skipped: no LAN address." : " Assistant cancellation/stop passed."));
         File.WriteAllText(Path.Combine(store.Root, "shell-chat-smoke.ok"), "Home lifecycle, independent close, TLS UI send/receive, global hide/restore, reconnect, cache cleanup, server window, assistant on a LAN bind passed.");
         library.RestoreLibrary();
     }
+    // 把窗口当前像素渲染保存到数据目录，供人工核对布局。
     private static void Capture(Window window, string path)
     {
         using var bitmap = new Avalonia.Media.Imaging.RenderTargetBitmap(new Avalonia.PixelSize((int)window.Bounds.Width, (int)window.Bounds.Height), new Avalonia.Vector(96, 96));

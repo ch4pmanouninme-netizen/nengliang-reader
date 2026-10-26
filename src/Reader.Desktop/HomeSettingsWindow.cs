@@ -6,10 +6,17 @@ using Reader.Core;
 namespace Reader.Desktop;
 
 // 良子小窗设置：主题色与主页关闭行为。阅读相关设置仍在阅读设置窗口。
+/// <summary>
+/// 主页设置窗口：选择界面主题和关闭主页时的行为，并把结果写回偏好。
+/// </summary>
+/// <remarks>主题选择器只修改偏好，保存后才由主页应用；取消或直接关窗时恢复打开前的主题快照。</remarks>
 internal sealed class HomeSettingsWindow : Window
 {
+    /// <summary>创建主页设置窗口。</summary>
+    /// <param name="preferences">应用偏好；保存时直接修改其中的退出方式和主题字段。</param>
     public HomeSettingsWindow(Preferences preferences)
     {
+        // 名称供冒烟测试按窗口名定位这个模态对话框。
         Name = "HomeSettingsDialog";
         Title = "良子小窗设置"; Icon = AppIcon.Shared;
         Width = 420; SizeToContent = SizeToContent.Height; MinHeight = 200; MaxHeight = 650;
@@ -27,6 +34,7 @@ internal sealed class HomeSettingsWindow : Window
         bool saved = false;
         var save = new Button { Name = "SaveHomeSettings", Content = "保存设置", IsDefault = true };
         var cancel = new Button { Name = "CancelHomeSettings", Content = "取消", IsCancel = true };
+        // 退出方式只在保存时写回；取消则完全不动偏好。
         save.Click += (_, _) =>
         {
             preferences.ExitMode = tray.IsChecked == true ? Preferences.ExitToTray : quit.IsChecked == true ? Preferences.ExitProgram : Preferences.ExitUnset;

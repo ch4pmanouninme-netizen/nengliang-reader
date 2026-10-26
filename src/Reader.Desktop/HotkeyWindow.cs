@@ -9,16 +9,27 @@ namespace Reader.Desktop;
 
 // 全局快捷键设置：点中一行后按住 Ctrl+Alt 按键录入。
 // 每行自带「重置」按钮（恢复该行默认键），输入框末尾的 ✕ 清除该行绑定。
+/// <summary>
+/// 全局快捷键设置窗口：录入五个功能的组合键，校验重复/无效按键，并标注注册失败的行。
+/// </summary>
+/// <remarks>空槽位表示该功能不绑定；窗口只负责收集结果，实际注册由 <see cref="Hotkeys"/> 完成。</remarks>
 internal sealed class HotkeyWindow : Window
 {
     private readonly TextBox[] boxes = new TextBox[Hotkeys.Functions.Length];
     private readonly TextBlock[] errors = new TextBlock[Hotkeys.Functions.Length];
     private readonly Button save = new() { Name = "SaveHotkeys", Content = "保存", IsDefault = true, IsEnabled = false };
+    // 从主窗口传入的注册失败标记；编辑对应行后清除。
     private readonly bool[] failed;
+    // 当前选中行，键盘录入落到这一行。
     private int active;
+    // 当前行的临时提示（例如修饰键不完整）。
     private string hint = "";
+    /// <summary>保存后的五个按键；取消或关闭时为 null。</summary>
     public string[]? Result { get; private set; }
 
+    /// <summary>创建快捷键设置窗口。</summary>
+    /// <param name="keys">当前按键配置，长度必须与功能列表一致。</param>
+    /// <param name="failedRows">各功能是否注册失败；null 表示没有失败信息。</param>
     public HotkeyWindow(string[] keys, bool[]? failedRows = null)
     {
         failed = failedRows is { Length: > 0 } ? failedRows : new bool[keys.Length];
@@ -29,6 +40,7 @@ internal sealed class HotkeyWindow : Window
         var rows = new StackPanel { Margin = new Thickness(24), Spacing = 10 };
         rows.Children.Add(new TextBlock { Text = $"先点中一行，再按住 {Hotkeys.Modifier} 按下要用的键。", TextWrapping = TextWrapping.Wrap });
         rows.Children.Add(new TextBlock { Text = "支持 A–Z、F1–F12、Left、Right、Space，五个键互不相同；✕ 清除该行绑定，该功能不再有全局快捷键。", FontSize = 12, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Gray });
+        // 每行固定四列：功能名、只读输入框、重置按钮、错误/提示。
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("64,*,Auto,150") };
         for (int index = 0; index < boxes.Length; index++)
         {
@@ -64,6 +76,7 @@ internal sealed class HotkeyWindow : Window
         rows.Children.Add(grid);
         var cancel = new Button { Name = "CancelHotkeys", Content = "取消", IsCancel = true };
         cancel.Click += (_, _) => Close(false);
+        // 保存前再归一化一次；任一行无效或重复时保持窗口打开。
         save.Click += (_, _) =>
         {
             string?[] names = boxes.Select(box => Hotkeys.Normalize(box.Text ?? "")).ToArray();
@@ -77,10 +90,12 @@ internal sealed class HotkeyWindow : Window
         // clicked, and a tunnelling handler on a box never runs while that box is not in the route —
         // which is exactly the case on open, so per-box handlers received nothing at all.
         AddHandler(InputElement.KeyDownEvent, (_, e) => Capture(e), RoutingStrategies.Tunnel);
+        // 打开后把焦点放到当前行，键盘录入无需先点击。
         Opened += (_, _) => boxes[active].Focus();
         Refresh();
     }
 
+    // 切换当前行并清空上一行遗留的提示。
     internal void Select(int row)
     {
         if (row == active && hint.Length == 0) return;
@@ -118,6 +133,7 @@ internal sealed class HotkeyWindow : Window
         Refresh();
     }
 
+    // 统一校验所有行：无效/重复立即报错，注册失败只在未修改的行显示。
     private void Refresh()
     {
         string?[] names = boxes.Select(box => Hotkeys.Normalize(box.Text ?? "")).ToArray();
