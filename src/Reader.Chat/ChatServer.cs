@@ -118,16 +118,22 @@ namespace Reader.Chat
                 if (join.Kind != "join" || !CorrectCode(join.Code)) { guest.Peer.Send(new ChatPacket { Kind = "reject", Text = "房间码不正确。" }); return; }
                 string nick = ChatWire.Clean(join.Nick);
                 if (nick.Length == 0 || nick.Length > 20 || nick.Contains("\n")) { guest.Peer.Send(new ChatPacket { Kind = "reject", Text = "昵称需要 1～20 个字符。" }); return; }
+                string reject = null;
                 lock (gate)
                 {
                     if (!running) return;
-                    if (guests.Count >= options.ParticipantLimit) { guest.Peer.Send(new ChatPacket { Kind = "reject", Text = "房间已满，最多 " + options.ParticipantLimit + " 人。" }); return; }
-                    if (guests.Any(g => String.Equals(g.Peer.Nick, nick, StringComparison.OrdinalIgnoreCase))) { guest.Peer.Send(new ChatPacket { Kind = "reject", Text = "这个昵称正在使用，请换一个。" }); return; }
-                    guest.Peer.Nick = nick; guests.Add(guest); joined = true; Volatile.Write(ref online, guests.Count);
-                    guest.Queue(new ChatPacket { Kind = "welcome", Session = session, Online = guests.Count });
-                    foreach (ChatPacket item in history) guest.Queue(item);
-                    Broadcast(new ChatPacket { Kind = "state", Online = guests.Count, Text = nick + " 加入了会话" });
+                    if (guests.Count >= options.ParticipantLimit) reject = "房间已满，最多 " + options.ParticipantLimit + " 人。";
+                    else if (guests.Any(g => String.Equals(g.Peer.Nick, nick, StringComparison.OrdinalIgnoreCase))) reject = "这个昵称正在使用，请换一个。";
+                    else
+                    {
+                        guest.Peer.Nick = nick; guests.Add(guest); joined = true; Volatile.Write(ref online, guests.Count);
+                        guest.Queue(new ChatPacket { Kind = "welcome", Session = session, Online = guests.Count });
+                        foreach (ChatPacket item in history) guest.Queue(item);
+                        Broadcast(new ChatPacket { Kind = "state", Online = guests.Count, Text = nick + " 加入了会话" });
+                    }
                 }
+                // 拒绝消息在锁外发送：写超时（最长 4 秒）不能阻塞其他客户端的加入、离开和广播。
+                if (reject != null) { guest.Peer.Send(new ChatPacket { Kind = "reject", Text = reject }); return; }
                 guest.Peer.Client.ReceiveTimeout = 45000;
                 Queue<DateTime> sent = new Queue<DateTime>();
                 while (running)

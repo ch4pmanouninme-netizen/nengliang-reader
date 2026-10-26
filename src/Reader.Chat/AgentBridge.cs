@@ -630,11 +630,13 @@ namespace Reader.Chat
             while (sent.Count > 0 && (now - sent.Peek()).TotalSeconds >= 10) sent.Dequeue();
             while (sent.Count < options.SendBurst)
             {
+                // 不先取出：断线时保持队首元素，下一轮重试不会把分片顺序打乱。
                 string chunk;
-                if (!outbox.TryTake(out chunk)) break;
+                if (!outbox.TryPeek(out chunk)) break;
                 ChatConnection active = connection;
-                if (chunk.Length == 0) continue;
-                if (active == null || !active.Connected) { outbox.TryAdd(chunk); break; }
+                if (chunk.Length == 0) { outbox.TryTake(out _); continue; }
+                if (active == null || !active.Connected) break;
+                outbox.TryTake(out chunk);
                 active.SendAsync(chunk).GetAwaiter().GetResult();
                 sent.Enqueue(DateTime.UtcNow); now = DateTime.UtcNow;
                 while (sent.Count > 0 && (now - sent.Peek()).TotalSeconds >= 10) sent.Dequeue();
