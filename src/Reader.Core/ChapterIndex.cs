@@ -5,6 +5,8 @@ using System.Text.RegularExpressions;
 namespace Reader.Core;
 
 /// <summary>小说中的一个章节标题及其在正文中的起始位置。</summary>
+/// <param name="Title">章节标题，已去除首尾空白。</param>
+/// <param name="Position">标题行首字符在正文中的 UTF-16 下标。</param>
 public sealed record Chapter(string Title, int Position);
 
 /// <summary>
@@ -30,8 +32,10 @@ public static class ChapterIndex
 
     /// <summary>
     /// 扫描整本书，按出现顺序返回章节标题。第一个标题之前如果有内容，
-    /// 会补一条“开头”（位置 0），方便从任意位置跳回卷首。识别不到标题时返回空列表。
+    /// 会补一条“开头”（位置 0），方便从任意位置跳回卷首。
     /// </summary>
+    /// <param name="text">整本书的纯文本，通常是 <see cref="Importer.Normalize"/> 的结果。</param>
+    /// <returns>按正文位置升序排列的章节；识别不到标题时返回空列表。</returns>
     public static IReadOnlyList<Chapter> Find(string text)
     {
         if (String.IsNullOrEmpty(text)) return Array.Empty<Chapter>();

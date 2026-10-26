@@ -15,6 +15,7 @@ namespace Reader.Core;
 /// </summary>
 internal static class EpubChapters
 {
+    /// <summary>目录项：标题、解析后的压缩包内路径，以及可选的锚点（不含 #）。</summary>
     internal sealed record TocEntry(string Title, string Path, string Fragment);
 
     /// <summary>一个 spine 文件在最终纯文本中的起始位置、长度和首行（作为标题兜底）。</summary>
@@ -24,6 +25,11 @@ internal static class EpubChapters
     /// 读取 nav.xhtml 或 toc.ncx。返回空列表表示书内没有可用目录，调用方应退回 spine 兜底。
     /// <paramref name="readEntry"/> 负责从压缩包读出路径对应的 XML 文本。
     /// </summary>
+    /// <param name="opf">已解析的 OPF 文档。</param>
+    /// <param name="opfPath">OPF 在压缩包内的路径，用于解析相对 href。</param>
+    /// <param name="readEntry">读取压缩包内文本的回调；抛出异常表示条目不可用。</param>
+    /// <param name="resolve">把（基准路径，相对 href）解析成压缩包内路径。</param>
+    /// <returns>按目录顺序排列的目录项；没有可用目录时为空列表。</returns>
     internal static List<TocEntry> Read(XDocument opf, string opfPath, Func<string, string> readEntry, Func<string, string, string> resolve)
     {
         // EPUB3：manifest 里 properties 含 nav 的那一项。
@@ -64,6 +70,10 @@ internal static class EpubChapters
     }
 
     /// <summary>把目录项映射到正文偏移；目录缺失或不完整时按 spine 文件边界生成。</summary>
+    /// <param name="toc">书内目录项，可为空列表。</param>
+    /// <param name="spine">按阅读顺序排列的正文文件及其在纯文本中的范围。</param>
+    /// <param name="body">最终拼接后的整本书纯文本。</param>
+    /// <returns>按正文位置升序、同一位置只保留信息量更大标题的章节列表。</returns>
     internal static IReadOnlyList<Chapter> Build(IReadOnlyList<TocEntry> toc, IReadOnlyList<SpineText> spine, string body)
     {
         Dictionary<string, SpineText> byPath = new Dictionary<string, SpineText>(StringComparer.OrdinalIgnoreCase);
@@ -109,6 +119,7 @@ internal static class EpubChapters
         return unique;
     }
 
+    // 目录里的路径损坏时按“没有目录”降级，不影响正文导入。
     private static string TryResolve(Func<string, string, string> resolve, string basePath, string href)
     {
         if (String.IsNullOrWhiteSpace(href)) return null;
@@ -116,6 +127,7 @@ internal static class EpubChapters
         catch (Exception ex) when (ex is InvalidDataException or UriFormatException or ArgumentException) { return null; }
     }
 
+    // 目录条目读取失败同样降级，调用方会退回 spine 文件边界兜底。
     private static string ReadOrNull(Func<string, string> readEntry, string path)
     {
         try { return readEntry(path); }
@@ -136,6 +148,7 @@ internal static class EpubChapters
         if (nav == null) return new List<TocEntry>();
 
         List<TocEntry> entries = new List<TocEntry>();
+        // 目录可能嵌套多层列表，这里按文档顺序展开所有 a 标签。
         foreach (XElement anchor in nav.Descendants().Where(element => element.Name.LocalName == "a"))
         {
             string href = (string)anchor.Attribute("href") ?? "";
@@ -163,6 +176,7 @@ internal static class EpubChapters
 
     private static void AddEntry(List<TocEntry> entries, string title, string href, string basePath, Func<string, string, string> resolve)
     {
+        // href 拆成文件路径与锚点；只有带文件路径的目录项才能映射到正文。
         int hash = href.IndexOf('#');
         string file = hash < 0 ? href : href[..hash];
         string fragment = hash < 0 ? "" : Uri.UnescapeDataString(href[(hash + 1)..]);
@@ -171,6 +185,7 @@ internal static class EpubChapters
         if (path != null) entries.Add(new TocEntry(title, path, fragment));
     }
 
+    // 折叠目录标题中的连续空白并截断，避免标题带换行或过长。
     private static string CleanTitle(string value)
     {
         string clean = Regex.Replace(value ?? "", @"\s+", " ").Trim();
@@ -188,12 +203,14 @@ internal static class EpubChapters
             if (end < 0) end = chapter.Length;
             else end += position;
             ReadOnlySpan<char> line = chapter[position..end].Trim();
+            // 逐行比较前缀；标题已在 CleanTitle 中折叠过空白。
             if (line.Length >= title.Length && line[..title.Length].SequenceEqual(title.AsSpan())) return position;
             position = end + 1;
         }
         return -1;
     }
 
+    // nav.xhtml 常带 HTML DOCTYPE，因此这里用 Ignore 而不是 Prohibit；同时禁用外部实体并限制文档大小。
     private static XDocument ReadTolerantXml(string text)
     {
         XmlReaderSettings settings = new XmlReaderSettings

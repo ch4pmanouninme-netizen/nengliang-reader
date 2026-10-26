@@ -17,6 +17,7 @@ namespace Reader.Core;
 /// </summary>
 public static class Importer
 {
+    // 注册代码页编码提供程序，使 GB18030（代码页 54936）在 .NET Core 上可用。
     static Importer() { Encoding.RegisterProvider(CodePagesEncodingProvider.Instance); }
 
     // TXT 上限按文件字节数计。中文 UTF-8 约 3 字节/字，24 MB 约合 800 万字。
@@ -50,11 +51,17 @@ public static class Importer
     /// EPUB 按 spine 顺序逐章回报（单位：章），TXT 只有开始/结束两拍（单位：1）。
     /// 回调可能发生在后台线程，桌面端用 <c>Progress&lt;T&gt;</c> 切回 UI 线程。
     /// </summary>
+    /// <param name="path">本地 TXT/EPUB 文件路径，按扩展名分派。</param>
+    /// <param name="progress">导入进度回调；可为 null。</param>
+    /// <returns>已解析、尚未写入书库的书籍。</returns>
+    /// <exception cref="InvalidDataException">扩展名不支持、体积超限、内容异常或正文为空。</exception>
     public static ImportedBook Read(string path, IProgress<ImportProgress> progress = null)
     {
         string extension = Path.GetExtension(path).ToLowerInvariant();
+        // EPUB 的解压上限在 ReadEpub 内单独检查；这里只做扩展名分派。
         if (extension == ".epub") return ReadEpub(path, progress);
         if (extension != ".txt") throw new InvalidDataException("目前支持 .txt 和 .epub 文件。");
+        // 先按字节数挡住超大 TXT，避免 File.ReadAllBytes 一次性占用过多内存。
         if (new FileInfo(path).Length > TxtFileLimit) throw new InvalidDataException("TXT 文件超过 24 MB，请先拆分文件。");
         progress?.Report(new ImportProgress(0, 1));
         byte[] bytes = File.ReadAllBytes(path);
@@ -68,6 +75,7 @@ public static class Importer
             try { text = new UTF8Encoding(false, true).GetString(bytes); }
             catch (DecoderFallbackException) { text = Encoding.GetEncoding(54936).GetString(bytes); }
         }
+        // 纯文本不应包含 NUL；出现通常意味着误选了二进制文件。
         if (text.IndexOf('\0') >= 0) throw new InvalidDataException("文件包含二进制数据，无法按 TXT 阅读。");
         string normalized = Normalize(text);
         // TXT 没有书内目录：导入时算一次章节索引并随书保存，避免每次打开都重扫全文。
@@ -77,6 +85,9 @@ public static class Importer
     }
 
     /// <summary>按 UTF-16 长度截断；不会把代理对切成半个字符。</summary>
+    /// <param name="value">原始文本。</param>
+    /// <param name="max">允许的最大 UTF-16 长度。</param>
+    /// <returns>不超过 max 个字符的前缀；结尾若是高代理项则回退一位。</returns>
     internal static string TruncateText(string value, int max)
     {
         if (value.Length <= max) return value;
@@ -89,6 +100,8 @@ public static class Importer
     /// 统一换行、合并行内空白、去掉空行。该函数是幂等的，因此 EPUB 可以
     /// 逐章规范化后再拼接，不需要对整本书再做第二遍。
     /// </summary>
+    /// <param name="text">任意换行风格的纯文本。</param>
+    /// <returns>以 \n 分隔、无空行、行内连续空白折叠为单个空格的文本。</returns>
     public static string Normalize(string text)
     {
         if (String.IsNullOrEmpty(text)) return "";
@@ -120,6 +133,7 @@ public static class Importer
     }
 
     // 与旧实现的 "[\\t \\u00a0\\u3000]+" 完全一致：只折叠这四类行内空白。
+    // 连续空白只在后面还有可见字符时才补一个空格，因此行首行尾不会留下多余空格。
     private static void AppendCollapsed(StringBuilder result, ReadOnlySpan<char> line)
     {
         bool pendingSpace = false;
@@ -132,6 +146,9 @@ public static class Importer
     }
 
     /// <summary>解析 EPUB 内的 XML 索引；禁用 DTD 与外部解析器，避免 XXE 与外部实体。</summary>
+    /// <param name="text">待解析的 XML 文本。</param>
+    /// <returns>解析后的文档。</returns>
+    /// <exception cref="XmlException">内容不是合法 XML 或包含 DTD。</exception>
     public static XDocument ReadXml(string text)
     {
         XmlReaderSettings settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, MaxCharactersInDocument = XmlLimit };
@@ -140,9 +157,13 @@ public static class Importer
     }
 
     /// <summary>
-    /// 读取并解压一个 ZIP 条目。<paramref name="total"/> 在读取前先累加该条目
-    /// 声明的解压大小，超限时不会把半个条目留在内存里。
+    /// 读取并解压一个 ZIP 条目。先按目录声明大小快速拒绝，再按实际读取字节累计总量；
+    /// 超限时不会把半个条目留在内存里。
     /// </summary>
+    /// <param name="archive">已打开的 EPUB 压缩包。</param>
+    /// <param name="path">条目在压缩包内的路径。</param>
+    /// <param name="total">跨条目累计的实际解压字节数，由调用方检查总上限。</param>
+    /// <returns>条目文本；按 BOM 自动识别 UTF-8/UTF-16。</returns>
     private static string EntryText(ZipArchive archive, string path, ref long total)
     {
         ZipArchiveEntry entry = archive.GetEntry(path);
@@ -168,13 +189,19 @@ public static class Importer
     }
 
     /// <summary>
-    /// 把 OPF 中的相对 href 解析成压缩包内路径。绝对地址、协议相对地址（//host）
-    /// 以及逃逸出根目录的路径一律拒绝，避免读取压缩包之外的内容。
+    /// 把 OPF 中的相对 href 解析成压缩包内路径。绝对地址和协议相对地址（//host）会被拒绝；
+    /// 解析结果始终落在压缩包的虚拟根目录内，不会访问文件系统。
     /// </summary>
+    /// <param name="basePath">基准文件（通常是 OPF）在压缩包内的路径。</param>
+    /// <param name="href">相对地址，可带 # 锚点。</param>
+    /// <returns>URL 解码后的压缩包内路径，不含开头的 /。</returns>
+    /// <exception cref="InvalidDataException">地址为空、为绝对/协议相对地址，或解析后主机被改写。</exception>
     public static string ResolveEntry(string basePath, string href)
     {
         Uri absolute;
+        // 绝对地址（含 http:、file:）和 //host 形式都不允许，避免引入外部资源。
         if (String.IsNullOrWhiteSpace(href) || Uri.TryCreate(href, UriKind.Absolute, out absolute) || href.StartsWith("//")) throw new InvalidDataException("EPUB 包含不支持的外部章节地址。");
+        // 用固定假主机解析相对路径；若 href 改写了主机，说明不是合法相对地址。
         Uri resolved = new Uri(new Uri("https://epub.invalid/" + basePath), href);
         if (resolved.Host != "epub.invalid") throw new InvalidDataException("无效的章节路径。");
         return Uri.UnescapeDataString(resolved.AbsolutePath.TrimStart('/'));
@@ -189,8 +216,10 @@ public static class Importer
         if (new FileInfo(path).Length > EpubFileLimit) throw new InvalidDataException("EPUB 文件超过 100 MB。");
         using (ZipArchive zip = ZipFile.OpenRead(path))
         {
+            // 限制条目数，避免海量小文件拖慢目录遍历。
             if (zip.Entries.Count > 12000) throw new InvalidDataException("EPUB 内文件数量过多。");
             long total = 0;
+            // container.xml 指向 OPF（书籍索引），后续 manifest 与 spine 都从这里读取。
             XDocument container = ReadXml(EntryText(zip, "META-INF/container.xml", ref total));
             XElement rootfile = container.Descendants().FirstOrDefault(e => e.Name.LocalName == "rootfile");
             string opfPath = rootfile == null ? null : (string)rootfile.Attribute("full-path");
@@ -239,6 +268,7 @@ public static class Importer
                 if ((string)itemref.Attribute("linear") == "no") continue;
                 string idref = (string)itemref.Attribute("idref") ?? "";
                 string chapter;
+                // idref 找不到对应 manifest 项时跳过，避免损坏的 OPF 直接中断导入。
                 if (manifest.TryGetValue(idref, out chapter)) chapters.Add(chapter);
             }
 
@@ -264,14 +294,18 @@ public static class Importer
                     string firstLine = text;
                     int newline = firstLine.IndexOf('\n');
                     if (newline >= 0) firstLine = firstLine[..newline];
+                    // 首行兼作无目录时的章节标题兜底；限制长度，避免异常排版产生超长标题。
                     firstLine = TruncateText(firstLine, 80);
                     spineTexts.Add(new EpubChapters.SpineText(chapters[index], textStart, text.Length, firstLine));
                 }
+                // 正文上限在拼接过程中检查，避免等整本拼完才拒绝。
                 if (result.Length > TextCharLimit) throw new InvalidDataException("EPUB 正文超过 2400 万字符，请先拆分文件。");
+                // 每章处理后回报一次，长书导入时界面可以持续更新。
                 progress?.Report(new ImportProgress(index + 1, chapters.Count));
             }
 
             string body = result.ToString();
+            // 没有正文通常是加密 EPUB 或纯图片扫描版。
             if (body.Length == 0) throw new InvalidDataException("EPUB 没有可读取的正文，可能是加密书籍或扫描图片版。");
             IReadOnlyList<Chapter> chapterIndex = EpubChapters.Build(toc, spineTexts, body);
             return new ImportedBook { Title = title == null ? Path.GetFileNameWithoutExtension(path) : title.Value.Trim(), Text = body, Format = "EPUB", Chapters = chapterIndex };
@@ -280,4 +314,6 @@ public static class Importer
 }
 
 /// <summary>导入进度。<see cref="Completed"/> / <see cref="Total"/> 对 EPUB 是章节数，对 TXT 固定为 0/1 → 1/1。</summary>
+/// <param name="Completed">已完成数量；TXT 为 0 或 1。</param>
+/// <param name="Total">总数量；TXT 固定为 1。</param>
 public record ImportProgress(int Completed, int Total);
