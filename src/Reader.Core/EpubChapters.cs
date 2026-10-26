@@ -24,7 +24,7 @@ internal static class EpubChapters
     /// 读取 nav.xhtml 或 toc.ncx。返回空列表表示书内没有可用目录，调用方应退回 spine 兜底。
     /// <paramref name="readEntry"/> 负责从压缩包读出路径对应的 XML 文本。
     /// </summary>
-    internal static List<TocEntry> Read(XDocument opf, string opfPath, Func<string, string> readEntry, Func<string, string> resolve)
+    internal static List<TocEntry> Read(XDocument opf, string opfPath, Func<string, string> readEntry, Func<string, string, string> resolve)
     {
         // EPUB3：manifest 里 properties 含 nav 的那一项。
         XElement navItem = opf.Descendants().FirstOrDefault(item =>
@@ -109,7 +109,7 @@ internal static class EpubChapters
         return unique;
     }
 
-    private static string TryResolve(Func<string, string> resolve, string basePath, string href)
+    private static string TryResolve(Func<string, string, string> resolve, string basePath, string href)
     {
         if (String.IsNullOrWhiteSpace(href)) return null;
         try { return resolve(basePath, href); }
@@ -122,7 +122,7 @@ internal static class EpubChapters
         catch (Exception ex) when (ex is InvalidDataException or IOException or XmlException) { return null; }
     }
 
-    private static List<TocEntry> ReadNav(string xml, string basePath, Func<string, string> resolve)
+    private static List<TocEntry> ReadNav(string xml, string basePath, Func<string, string, string> resolve)
     {
         XDocument document;
         try { document = ReadTolerantXml(xml); }
@@ -144,7 +144,7 @@ internal static class EpubChapters
         return entries;
     }
 
-    private static List<TocEntry> ReadNcx(string xml, string basePath, Func<string, string> resolve)
+    private static List<TocEntry> ReadNcx(string xml, string basePath, Func<string, string, string> resolve)
     {
         XDocument document;
         try { document = ReadTolerantXml(xml); }
@@ -161,7 +161,7 @@ internal static class EpubChapters
         return entries;
     }
 
-    private static void AddEntry(List<TocEntry> entries, string title, string href, string basePath, Func<string, string> resolve)
+    private static void AddEntry(List<TocEntry> entries, string title, string href, string basePath, Func<string, string, string> resolve)
     {
         int hash = href.IndexOf('#');
         string file = hash < 0 ? href : href[..hash];
