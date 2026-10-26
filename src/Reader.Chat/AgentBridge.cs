@@ -15,6 +15,12 @@ using System.Xml.Linq;
 
 namespace Reader.Chat
 {
+    /// <summary>端点主动返回的错误；与无法解析的帧区分，避免在流式读取里被当成 keep-alive 吞掉。</summary>
+    internal sealed class AgentResponseException : Exception
+    {
+        public AgentResponseException(string message) : base(message) { }
+    }
+
     // Minimal JSON reader for agent replies. Retained from the 1.5 line deliberately: the shapes we
     // read are three fixed paths, and System.Text.Json would pull a full DOM in to walk them.
     internal static class AgentJson
@@ -432,12 +438,6 @@ namespace Reader.Chat
             }
         }
 
-        // 端点主动返回的错误要和“无法解析的帧”区分开，否则会在流式读取里被当成 keep-alive 吞掉。
-        private sealed class AgentResponseException : InvalidDataException
-        {
-            public AgentResponseException(string message) : base(message) { }
-        }
-
         private static string Delta(string json)
         {
             object root = AgentJson.Parse(json);
@@ -611,6 +611,7 @@ namespace Reader.Chat
                 if (truncated) outbox.TryAdd("（回答较长，已截断）");
                 status = "已加入房间";
             }
+            catch (AgentResponseException ex) { status = "回答失败：" + ex.Message; outbox.TryAdd("（助手回答失败）"); }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { status = "已停止"; }
             // HttpClient reports its own Timeout as a cancellation, so this must be told apart from a stop.
             catch (TaskCanceledException ex) { status = "请求超时：" + ex.Message; outbox.TryAdd("（助手响应超时）"); }
