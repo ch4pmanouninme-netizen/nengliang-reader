@@ -74,7 +74,8 @@ internal sealed partial class MainWindow
             if (next == null)
             {
                 reader?.DisposeReader(); reader = null; session = null;
-                description.Text = store.Books.Count == 0 ? "书库为空，打开 TXT / EPUB 添加书籍。" : "当前分组没有书籍。"; progress.Value = 0;
+                description.Text = store.Books.Count == 0 ? "书库为空，打开 TXT / EPUB 添加书籍。" : "当前分组没有书籍。";
+                ShowReadingProgress();
             }
         }
         finally { refreshingBooks = false; }

@@ -21,14 +21,23 @@ internal sealed class HomeSettingsWindow : Window
         var ask = new TextBlock { Text = "尚未选择：第一次关闭主页时会询问并记住选择。", FontSize = 12, IsVisible = preferences.ExitMode == Preferences.ExitUnset };
         rows.Children.Add(new TextBlock { Text = "退出选项" });
         rows.Children.Add(tray); rows.Children.Add(quit); rows.Children.Add(ask);
+        // 主题选择器会立即修改 Preferences；取消或直接关窗时恢复快照，避免被下一次保存带走。
+        string originalTheme = preferences.UiTheme;
+        bool originalDark = preferences.UiDark;
+        bool saved = false;
         var save = new Button { Name = "SaveHomeSettings", Content = "保存设置", IsDefault = true };
         var cancel = new Button { Name = "CancelHomeSettings", Content = "取消", IsCancel = true };
         save.Click += (_, _) =>
         {
             preferences.ExitMode = tray.IsChecked == true ? Preferences.ExitToTray : quit.IsChecked == true ? Preferences.ExitProgram : Preferences.ExitUnset;
+            saved = true;
             Close(true);
         };
         cancel.Click += (_, _) => Close(false);
+        Closing += (_, _) =>
+        {
+            if (!saved) { preferences.UiTheme = originalTheme; preferences.UiDark = originalDark; }
+        };
         rows.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { save, cancel } });
         Content = rows;
     }

@@ -23,7 +23,7 @@ namespace Reader.Chat
         {
             if (text == null) throw new InvalidDataException("JSON 内容为空。");
             int index = 0;
-            object value = ParseValue(text, ref index);
+            object value = ParseValue(text, ref index, 0);
             Skip(text, ref index);
             if (index != text.Length) throw new InvalidDataException("JSON 末尾有多余内容。");
             return value;
@@ -52,13 +52,15 @@ namespace Reader.Chat
             while (index < text.Length && (text[index] == ' ' || text[index] == '\t' || text[index] == '\n' || text[index] == '\r')) index++;
         }
 
-        private static object ParseValue(string text, ref int index)
+        private static object ParseValue(string text, ref int index, int depth)
         {
+            // 端点响应是外部输入：限制嵌套深度，避免恶意 JSON 触发 StackOverflow。
+            if (depth > 64) throw new InvalidDataException("JSON 嵌套过深。");
             Skip(text, ref index);
             if (index >= text.Length) throw new InvalidDataException("JSON 内容不完整。");
             char c = text[index];
-            if (c == '{') return ParseObject(text, ref index);
-            if (c == '[') return ParseArray(text, ref index);
+            if (c == '{') return ParseObject(text, ref index, depth + 1);
+            if (c == '[') return ParseArray(text, ref index, depth + 1);
             if (c == '"') return ParseString(text, ref index);
             if (String.CompareOrdinal(text, index, "true", 0, 4) == 0) { index += 4; return true; }
             if (String.CompareOrdinal(text, index, "false", 0, 5) == 0) { index += 5; return false; }
@@ -66,7 +68,7 @@ namespace Reader.Chat
             return ParseNumber(text, ref index);
         }
 
-        private static Dictionary<string, object> ParseObject(string text, ref int index)
+        private static Dictionary<string, object> ParseObject(string text, ref int index, int depth)
         {
             Dictionary<string, object> map = new Dictionary<string, object>();
             index++; Skip(text, ref index);
@@ -78,7 +80,7 @@ namespace Reader.Chat
                 Skip(text, ref index);
                 if (index >= text.Length || text[index] != ':') throw new InvalidDataException("JSON 对象缺少冒号。");
                 index++;
-                map[name] = ParseValue(text, ref index);
+                map[name] = ParseValue(text, ref index, depth);
                 Skip(text, ref index);
                 if (index >= text.Length) throw new InvalidDataException("JSON 对象没有结束。");
                 if (text[index] == ',') { index++; continue; }
@@ -87,14 +89,14 @@ namespace Reader.Chat
             }
         }
 
-        private static List<object> ParseArray(string text, ref int index)
+        private static List<object> ParseArray(string text, ref int index, int depth)
         {
             List<object> items = new List<object>();
             index++; Skip(text, ref index);
             if (index < text.Length && text[index] == ']') { index++; return items; }
             while (true)
             {
-                items.Add(ParseValue(text, ref index));
+                items.Add(ParseValue(text, ref index, depth));
                 Skip(text, ref index);
                 if (index >= text.Length) throw new InvalidDataException("JSON 数组没有结束。");
                 if (text[index] == ',') { index++; continue; }
@@ -575,8 +577,18 @@ namespace Reader.Chat
             {
                 client.Ask(question.Nick + "：" + question.Text, token, delegate(string delta)
                 {
+                    // 非流式端点会把整段回答一次送来；按剩余额度截断后继续分片，
+                    // 不能整段丢弃，否则 stream:false 的端点会完全没有回答。
+                    int remaining = options.ReplyLimit - total;
+                    if (remaining <= 0) { truncated = true; return; }
+                    if (delta.Length > remaining)
+                    {
+                        delta = delta.Substring(0, remaining);
+                        if (Char.IsHighSurrogate(delta[^1])) delta = delta[..^1];
+                        truncated = true;
+                        if (delta.Length == 0) return;
+                    }
                     total += delta.Length;
-                    if (total > options.ReplyLimit) { truncated = true; return; }
                     ready.Clear(); chunker.Add(delta, ready);
                     foreach (string chunk in ready) if (!outbox.TryAdd(chunk)) truncated = true;
                 });

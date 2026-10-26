@@ -24,7 +24,8 @@ internal sealed partial class MainWindow
         void Click(MenuItem item) => item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
         async Task<ContextMenu> RowMenu(Book target)
         {
-            books.ScrollIntoView(target); await Task.Delay(100);
+            books.ScrollIntoView(target);
+            await Wait(() => books.ContainerFromItem(target) is Control);
             var container = books.ContainerFromItem(target) as Control;
             Check(container != null, "book has a realized list row");
             var row = container!.GetVisualDescendants().OfType<Control>().First(control => control.ContextMenu != null);
@@ -35,7 +36,7 @@ internal sealed partial class MainWindow
             var point = row.TranslatePoint(new Avalonia.Point(8, 8), this) ?? new Avalonia.Point(0, 0);
             row.RaiseEvent(new PointerPressedEventArgs(row, pointer, this, point, 0,
                 new PointerPointProperties(RawInputModifiers.RightMouseButton, PointerUpdateKind.RightButtonPressed), KeyModifiers.None, 1));
-            await Task.Delay(60);
+            await Wait(() => menu.IsOpen);
             Check(books.SelectedItem == selected && !busy, "right mouse event preserves reading selection and does not block its menu");
             Check(menu.IsOpen && Item(menu, "DeleteBook").Header?.ToString() == "删除", "right-click menu opens on the actual book row");
             return menu;
@@ -139,6 +140,9 @@ internal sealed partial class MainWindow
         GroupButton("CloseGroupDialog").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         await Wait(() => !dialogOpen && appLifetime.Windows.All(window => window.Name != "GroupDialog"));
         Check(groupFilter.Items.OfType<GroupChoice>().Any(choice => choice.Group == "空管理组"), "the shelf filter picks up groups created in the window");
+        groupFilter.SelectedItem = groupFilter.Items.OfType<GroupChoice>().Single(choice => choice.Group == "空管理组");
+        await Wait(() => !refreshingBooks && session == null);
+        Check(string.IsNullOrEmpty(progressLabel.Text) && progress.Value == 0, "selecting an empty group clears the reading progress label");
 
         busy = true; RefreshBooks(active.Id, true); busy = false; await SelectBook(active);
         menu = await RowMenu(target); menu.Close(); Click(Item(menu, "DeleteBook")); await AnswerDelete(false);

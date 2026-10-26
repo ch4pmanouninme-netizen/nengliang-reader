@@ -124,6 +124,9 @@ try
     var endpoint = new TcpListener(IPAddress.Loopback, 0); endpoint.Start();
     int agentPort = ((IPEndPoint)endpoint.LocalEndpoint).Port;
     var requests = new ConcurrentQueue<string>();
+    bool deepJson = false;
+    try { AgentJson.Parse(new string('[', 200) + new string(']', 200)); } catch (InvalidDataException) { deepJson = true; }
+    Check(deepJson, "agent JSON nesting depth is bounded");
     // The fixture repeats the agent nickname so that only the loop guard can stop a self-answer loop.
     string reply = String.Concat(Enumerable.Repeat("@小助手：这是完整回答。", 150));
     string events = "data: {\"choices\":[{\"delta\":{\"content\":" + AgentJson.Quote(reply) + "}}]}\r\n\r\ndata: [DONE]\r\n\r\n";
@@ -154,6 +157,33 @@ try
             Check(seen.Count(p => p.Kind == "message" && p.Nick == "小助手") == answers.Length, "no runaway repeat answers arrive after the reply settles");
         }
     }
+    // 非流式端点会把整段回答一次送来；超过 ReplyLimit 时必须截断后继续分片，而不是整段丢弃。
+    var jsonEndpoint = new TcpListener(IPAddress.Loopback, 0); jsonEndpoint.Start();
+    int jsonPort = ((IPEndPoint)jsonEndpoint.LocalEndpoint).Port;
+    string longReply = new string('回', 300);
+    string jsonBody = "{\"choices\":[{\"message\":{\"content\":" + AgentJson.Quote(longReply) + "}}]}";
+    _ = Task.Run(() => ServeAgent(jsonEndpoint, jsonBody, 1, new ConcurrentQueue<string>(), "application/json"));
+    string jsonRoom = Guid.NewGuid().ToString("N").Substring(0, 12);
+    using (var jsonCertificate = ChatSecurity.CreateCertificate())
+    using (var jsonService = new ChatServer(jsonRoom, new ChatOptions(sendBurst: 100), jsonCertificate))
+    {
+        jsonService.Start(IPAddress.Loopback, 0);
+        var jsonSettings = new AgentOptions("http://127.0.0.1:" + jsonPort + "/v1/chat", "test-key", "test-model", "小助手", "",
+            mentionOnly: true, stream: false, replyLimit: 100, chunkSize: 50);
+        using var jsonBridge = new AgentBridge(jsonSettings, "127.0.0.1", jsonService.Port, jsonRoom, jsonService.Fingerprint, new ChatOptions(sendBurst: 100));
+        using var jsonAsker = new ChatConnection();
+        var jsonSeen = new ConcurrentQueue<ChatPacket>();
+        jsonAsker.Received += jsonSeen.Enqueue;
+        await jsonAsker.ConnectAsync("127.0.0.1", jsonService.Port, "非流式提问者", jsonRoom, jsonService.Fingerprint);
+        await Wait(() => jsonService.Online == 2, "non-streaming agent joins the room", 25);
+        await jsonAsker.SendAsync("@小助手 非流式回答");
+        await Wait(() => jsonSeen.Any(p => p.Kind == "message" && p.Nick == "小助手"), "non-streaming agent answers", 25);
+        await Wait(() => !jsonBridge.Status.StartsWith("正在回答"), "non-streaming agent returns to idle", 25);
+        string assembled = string.Concat(jsonSeen.Where(p => p.Kind == "message" && p.Nick == "小助手").Select(p => p.Text));
+        Check(assembled == longReply.Substring(0, 100) + "（回答较长，已截断）", "over-limit non-streaming reply is clamped and truncated instead of dropped");
+    }
+    jsonEndpoint.Stop();
+
     // A bind to one specific address does not answer on loopback, so the bridge has to dial back the
     // address the service was actually handed. Hardcoding 127.0.0.1 stranded the assistant on every
     // LAN deployment while the service window still reported that it had joined the room.
@@ -226,7 +256,7 @@ catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
 
 // Minimal HTTP/1.1 fixture standing in for an OpenAI-compatible endpoint. HttpListener needs an
 // admin URL ACL on Windows, so the raw socket is the portable choice.
-static void ServeAgent(TcpListener listener, string body, int count, ConcurrentQueue<string> requests)
+static void ServeAgent(TcpListener listener, string body, int count, ConcurrentQueue<string> requests, string contentType = "text/event-stream")
 {
     byte[] payload = Encoding.UTF8.GetBytes(body);
     for (int i = 0; i < count; i++)
@@ -239,7 +269,7 @@ static void ServeAgent(TcpListener listener, string body, int count, ConcurrentQ
                 string? request = ReadHttpRequest(stream);
                 if (request == null) continue;
                 requests.Enqueue(request);
-                byte[] head = Encoding.UTF8.GetBytes("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: " + payload.Length + "\r\nConnection: close\r\n\r\n");
+                byte[] head = Encoding.UTF8.GetBytes("HTTP/1.1 200 OK\r\nContent-Type: " + contentType + "\r\nContent-Length: " + payload.Length + "\r\nConnection: close\r\n\r\n");
                 stream.Write(head, 0, head.Length); stream.Write(payload, 0, payload.Length); stream.Flush();
             }
         }

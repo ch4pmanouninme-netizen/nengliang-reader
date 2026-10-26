@@ -19,7 +19,8 @@ public sealed class MacIntegration : IDisposable
             if (result == 0 && hotkey.Signature == 0x4e4c5244) pressed((int)hotkey.Id);
             return result;
         };
-        EventType type = new() { Class = 0x6b657962, Kind = 6 };
+        // 5 = kEventHotKeyPressed；6 是 kEventHotKeyReleased，会让热键松开才触发。
+        EventType type = new() { Class = 0x6b657962, Kind = 5 };
         IntPtr target = GetApplicationEventTarget();
         if (InstallEventHandler(target, callback, 1, ref type, IntPtr.Zero, out handler) != 0)
         {
