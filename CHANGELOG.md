@@ -1,5 +1,10 @@
 # 更新日志
 
+## 2.3.10 — 2026-10-26
+
+- 全项目补充中文注释：文件/类型职责摘要、公开 API 的 XML 文档、复杂逻辑的 WHY 说明；不改变任何行为。
+- 覆盖 Reader.Core、Reader.Chat、Reader.Desktop、平台层、测试与构建/部署脚本。
+
 ## 2.3.9 — 2026-10-26
 
 - 发布包文件名带版本号：Windows 为 `NengliangReader-v<版本>-win-x64.zip`，macOS 为 `NengliangReader-v<版本>-osx-arm64/x64[-unsigned].dmg`。
