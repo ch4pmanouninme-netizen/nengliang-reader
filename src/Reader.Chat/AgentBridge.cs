@@ -466,6 +466,7 @@ namespace Reader.Chat
         private readonly Timer retry, pump;
         private volatile string status = "未启动";
         private ChatConnection connection;
+        private string pending;
         private int disposed, joining, inflight, sending;
         private DateTime nextAttempt = DateTime.MinValue;
         private int backoff = 2;
@@ -630,13 +631,14 @@ namespace Reader.Chat
             while (sent.Count > 0 && (now - sent.Peek()).TotalSeconds >= 10) sent.Dequeue();
             while (sent.Count < options.SendBurst)
             {
-                // 不先取出：断线时保持队首元素，下一轮重试不会把分片顺序打乱。
+                // 断线时把没发出去的分片暂存在 pending，下一轮优先补发；
+                // 不能放回 outbox 队尾，否则分片顺序会被打乱。
                 string chunk;
-                if (!outbox.TryPeek(out chunk)) break;
+                if (pending != null) { chunk = pending; pending = null; }
+                else if (!outbox.TryTake(out chunk)) break;
                 ChatConnection active = connection;
-                if (chunk.Length == 0) { outbox.TryTake(out _); continue; }
-                if (active == null || !active.Connected) break;
-                outbox.TryTake(out chunk);
+                if (chunk.Length == 0) continue;
+                if (active == null || !active.Connected) { pending = chunk; break; }
                 active.SendAsync(chunk).GetAwaiter().GetResult();
                 sent.Enqueue(DateTime.UtcNow); now = DateTime.UtcNow;
                 while (sent.Count > 0 && (now - sent.Peek()).TotalSeconds >= 10) sent.Dequeue();
