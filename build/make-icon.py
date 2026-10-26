@@ -80,6 +80,7 @@ def render(size):
     return bytes(pixels)
 
 
+# 手写 PNG：IHDR + 压缩后的 IDAT + IEND，CRC 覆盖块类型和载荷。
 def png_bytes(size, pixels):
     def chunk(tag, payload):
         body = tag + payload
@@ -104,6 +105,7 @@ def ico_bytes(images):
     return header + entries + payload
 
 
+# 主图 512 供 .icns 和文档使用；ICO 每个尺寸都重新渲染，避免缩放糊边。
 def main():
     os.makedirs(ASSETS, exist_ok=True)
     master = png_bytes(MASTER_SIZE, render(MASTER_SIZE))

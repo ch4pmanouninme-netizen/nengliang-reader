@@ -11,9 +11,11 @@ param(
 if ($CodeRoot) { $env:NENGLIANG_CODE_ROOT = $CodeRoot }
 . (Join-Path $PSScriptRoot 'common.ps1')
 
+# 先把本次参数记到 launch.json，stop/update 才能按同一数据目录操作。
 $arguments = Resolve-Arguments $AppArguments
 Save-LaunchArguments $arguments
 
+# run\ 不存在才编译；路径保持稳定，Windows 防火墙规则无需随版本重新授权。
 if (!(Test-Path -LiteralPath $ReaderExe)) {
     Write-Step '第一次运行：先准备本机版本'
     Write-Note ('代码会装到 ' + $ReaderRunDir + '，这个路径之后不会再变。')

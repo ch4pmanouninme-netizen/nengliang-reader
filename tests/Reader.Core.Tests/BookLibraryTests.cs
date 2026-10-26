@@ -4,12 +4,15 @@ using System.Xml.Linq;
 
 namespace Reader.Core.Tests;
 
+// 书库管理契约：置顶与分组只影响视图顺序，分组是独立实体（可空、可改名、可排序、可删除），
+// 备份往返保留组织信息，写盘失败必须整体回滚，旧索引与中断删除要能恢复。
 internal static class BookLibraryTests
 {
     private static int checks;
     private static void Check(bool ok, string label) { if (!ok) throw new Exception("FAIL: " + label); checks++; Console.WriteLine("PASS: " + label); }
     public static async Task Run(string root)
     {
+        // 固定三本书作为夹具：置顶、分组和删除都在这三本上验证，顺序断言基于导入顺序。
         var store = new Store(root);
         string original = Path.Combine(root, "original-import.txt"); File.WriteAllText(original, "原始文件保留");
         var first = store.Add("第一本", "原始文件保留", "TXT");
@@ -17,11 +20,13 @@ internal static class BookLibraryTests
         var third = store.Add("第三本", "第三本的正文", "TXT");
         first.Position = 2; first.Bookmark = 3; store.LastId = first.Id; store.Save();
         string firstCache = Path.Combine(root, "books", first.Id + ".txt");
+        // 置顶只改变 GetBooks 的视图顺序，Books 仍保持导入顺序。
         await store.SetPinnedAsync(first, true);
         Check(store.GetBooks().First() == first && store.Books.First() == third, "pinning changes view order without changing import order");
         await store.SetGroupAsync(first, "  小说 & 阅读  "); await store.SetGroupAsync(second, "小说 & 阅读");
         Check(store.GroupNames.SequenceEqual(new[] { "小说 & 阅读" }) && store.GetBooks("小说 & 阅读").First() == first, "groups trim names and retain pin order inside filter");
         Check(store.GetBooks("").Single() == third && store.GetBooks().Length == 3, "ungrouped and all-book filters are distinct");
+        // 重新打开同一目录，验证置顶、分组、进度和书签都已持久化。
         var restored = new Store(root); var restoredFirst = restored.Books.Single(book => book.Id == first.Id);
         Check(restoredFirst.IsPinned && restoredFirst.Group == "小说 & 阅读" && restoredFirst.Position == 2 && restoredFirst.Bookmark == 3, "restart preserves pin group progress and bookmark");
         await store.SetPinnedAsync(first, false);
@@ -71,12 +76,15 @@ internal static class BookLibraryTests
         LibraryArchive.Import(imported, backup);
         Check(!duplicate.IsPinned && duplicate.Group == "本机分组", "backup merge preserves destination organization for duplicate books");
 
+        // 用同名目录占住 state.xml.tmp，让下一次写盘必然失败，验证内存元数据整体回滚。
         string temporary = Path.Combine(root, "state.xml.tmp"); Directory.CreateDirectory(temporary);
         bool failed = false; try { await store.SetPinnedAsync(second, true); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failed = true; }
         Check(failed && !second.IsPinned, "failed metadata persistence rolls back pin state");
         failed = false;
+        // 分组改名失败时整张分组表回滚，不能只改一半。
         try { await store.RenameGroupAsync("小说 & 阅读", "不该生效"); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failed = true; }
         Check(failed && store.GroupNames.Contains("小说 & 阅读") && !store.GroupNames.Contains("不该生效"), "failed group write rolls the whole list back");
+        // 删除先写 .delete- 暂存再提交索引；索引写失败时缓存、当前书和正文都要还原。
         failed = false; try { await store.RemoveBookAsync(first); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failed = true; }
         Check(failed && store.Books.Contains(first) && store.LastId == first.Id && File.ReadAllText(firstCache) == "原始文件保留", "failed delete persistence restores index active book and cached text");
         Check(Directory.GetFiles(Path.Combine(root, "books"), "*.delete-*").Length == 0, "rolled-back deletion leaves no staged file");
@@ -88,16 +96,19 @@ internal static class BookLibraryTests
         Check(new Store(root).Books.All(book => book.Id != first.Id && book.Id != second.Id), "deleted books stay removed after restart");
         await store.RemoveBookAsync(third);
         Check(store.Books.Count == 0 && store.LastId == "" && new Store(root).Books.Count == 0, "deleting final book persists an empty library");
+        // 重新导入同一本书时修复被截断的缓存正文，并清掉临时文件。
         var repair = new Store(Path.Combine(root, "repair"));
         var repaired = repair.Add("修复", "完整正文内容", "TXT");
         string repairedPath = Path.Combine(repair.Root, "books", repaired.Id + ".txt");
         File.WriteAllText(repairedPath, "半截", new UTF8Encoding(false));
         repair.Add("修复", "完整正文内容", "TXT");
         Check(File.ReadAllText(repairedPath, Encoding.UTF8) == "完整正文内容" && !File.Exists(repairedPath + ".tmp"), "a truncated cached text is repaired on re-import");
+        // 主索引损坏时从备份恢复；books/ 下的非书籍 txt 不能被当成书。
         File.WriteAllText(Path.Combine(root, "books", "notes.txt"), "杂项");
         File.WriteAllText(Path.Combine(root, "state.xml"), "damaged");
         Check(new Store(root).Books.Count == 0, "backup recovery ignores non-book txt files");
 
+        // 旧索引没有 pinned/group 属性时按默认值读取。
         var legacy = new Store(Path.Combine(root, "legacy")); var legacyBook = legacy.Add("旧书", "旧版兼容", "TXT"); legacy.Save();
         string statePath = Path.Combine(legacy.Root, "state.xml"); var state = XDocument.Load(statePath);
         state.Root!.Element("book")!.Attribute("pinned")!.Remove(); state.Root.Element("book")!.Attribute("group")!.Remove(); state.Save(statePath);
@@ -114,6 +125,7 @@ internal static class BookLibraryTests
         upgradeDocument.Root!.Element("groups")!.Remove();
         upgradeDocument.Save(upgradeState);
         Check(new Store(upgrade.Root).GroupNames.SequenceEqual(new[] { "a-group", "b-group" }), "an index without a group list derives one in the old display order");
+        // 模拟删除事务的两个中断点：索引提交前恢复缓存，提交后清掉暂存文件。
         string cache = Path.Combine(legacy.Root, "books", legacyBook.Id + ".txt"); string staged = cache + ".delete-" + Guid.NewGuid().ToString("N"); File.Move(cache, staged);
         Check(new Store(legacy.Root).Books.Count == 1 && File.Exists(cache) && !File.Exists(staged), "interrupted deletion before index commit restores cached book");
         staged = cache + ".delete-" + Guid.NewGuid().ToString("N"); File.Move(cache, staged);

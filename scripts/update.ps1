@@ -26,6 +26,7 @@ $arguments = Resolve-Arguments $AppArguments
 Assert-Command 'git' '请先装 Git for Windows（https://git-scm.com/download/win）。'
 # 下面几处都用 Invoke-Captured 而不是就地 2>$null：git 报错走的是 stderr，直接接住的话
 # PowerShell 5.1 会把它变成终止性错误，脚本当场中断 —— 该打印的人话提示反而打不出来。
+# 先确认代码目录是 git 工作区，否则更新和回滚都无从谈起。
 $inside = Invoke-Captured 'git' @('-C', $repo, 'rev-parse', '--is-inside-work-tree')
 if ($inside.Code -ne 0 -or $inside.Output.Count -eq 0 -or $inside.Output[0].Trim() -ne 'true') {
     Fail ($repo + ' 不是 git 仓库。请先 git clone 拿到代码，然后双击仓库里的 scripts\install.bat 生成快捷方式。')
@@ -45,6 +46,7 @@ Write-Step ('从 GitHub 拉取最新代码（分支 ' + $Branch + '）')
 & git -C $repo fetch origin
 if ($LASTEXITCODE -ne 0) { Fail '拉取失败：连不上 GitHub，或者当前账号没有权限。程序仍然可以照常启动，只是没有更新。' }
 
+# 只比较本地 HEAD 与远端分支；没有新提交就直接结束。
 $log = Invoke-Captured 'git' @('-C', $repo, 'log', '--oneline', '--no-decorate', ('HEAD..origin/' + $Branch))
 if ($log.Code -ne 0) { Fail ('远端没有 ' + $Branch + ' 这个分支。') }
 $changes = @($log.Output)
@@ -73,6 +75,7 @@ if ($head.Code -ne 0 -or $head.Output.Count -eq 0) { Fail '读不出更新前的
 $before = $head.Output[0].Trim()
 
 Write-Step '切到最新代码'
+# 拉取成功后硬切到远端分支；本地受版本管理的改动已在上面拦截或用 -Force 覆盖。
 & git -C $repo reset --hard ('origin/' + $Branch)
 if ($LASTEXITCODE -ne 0) { Fail '切到最新代码失败，没有做任何改动。' }
 

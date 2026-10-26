@@ -57,6 +57,7 @@ function Quote-Arguments($arguments) {
     })
 }
 
+# launch.json 只保存启动参数，不保存进程状态；stop/update 复用它找到同一数据目录。
 function Save-LaunchArguments($arguments) {
     New-Item -ItemType Directory -Path $ReaderCodeRoot -Force | Out-Null
     Set-Content -LiteralPath $ReaderLaunchState -Value (@{ arguments = @($arguments) } | ConvertTo-Json -Compress) -Encoding UTF8

@@ -16,6 +16,7 @@ $repo = Resolve-RepoRoot $RepoRoot
 if (!$Destination) { $Destination = [Environment]::GetFolderPath('Desktop') }
 if (!(Test-Path -LiteralPath $Destination)) { New-Item -ItemType Directory -Path $Destination -Force | Out-Null }
 
+# 快捷方式统一指向 Windows PowerShell 5.1，与同事桌面环境一致。
 $PowerShellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $shell = New-Object -ComObject WScript.Shell
 

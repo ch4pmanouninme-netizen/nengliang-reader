@@ -25,9 +25,11 @@ $readerRunDir = Join-Path $readerCodeRoot 'run'
 $readerData = Join-Path $readerRoot 'Data Dir'
 $readerOtherData = Join-Path $readerRoot 'Other Data Dir'
 $readerApp = Join-Path $readerRunDir 'NengliangReader.exe'
+# 记录真实代码目录是否存在，最后断言整个测试没有碰过它。
 $readerDefaultCodeRoot = Join-Path $env:LOCALAPPDATA 'NengliangReaderCode'
 $readerDefaultExisted = Test-Path -LiteralPath $readerDefaultCodeRoot
 $readerCodeRootBefore = $env:NENGLIANG_CODE_ROOT
+# 所有子进程集中登记，finally 里统一回收。
 $readerChildren = @()
 $readerPassed = $false
 
@@ -96,6 +98,7 @@ function Wait-ReaderLockHeld($dataDirectory) {
 }
 
 try {
+    # 把打包产物复制到临时 run\，后续启动/停止只作用于这份副本。
     New-Item -ItemType Directory -Path $readerRunDir, $readerData, $readerOtherData -Force | Out-Null
     Copy-Item -Path (Join-Path $AppDirectory '*') -Destination $readerRunDir -Recurse -Force
     $env:NENGLIANG_CODE_ROOT = $readerCodeRoot
@@ -166,6 +169,7 @@ try {
     Assert-Reader ($updateExit -eq 1) '编译失败时 update 报失败'
     Assert-Reader ((Get-ReaderHead $updateClone) -eq $updateBefore) '编译失败后代码退回更新前那一版'
     Assert-Reader (!(Test-Path -LiteralPath (Join-Path $updateCodeRoot 'run'))) '编译失败没有留下半个 run 目录'
+    # 全部断言通过才清理证据目录；失败时保留现场方便排查。
     $readerPassed = $true
 } finally {
     foreach ($child in $readerChildren) {

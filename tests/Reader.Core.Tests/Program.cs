@@ -4,11 +4,14 @@ using System.Text;
 using Reader.Core;
 using Reader.Core.Tests;
 
+// 核心回归入口：旧格式兼容、控制通道、书库/归档、下载、章节索引与 EPUB 导入。
+// 所有状态都写进以 GUID 命名的临时目录，结束时整体删除，不碰真实书库。
 string root = Path.Combine(Path.GetTempPath(), "reader-tests-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 try
 {
     Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+    // 先跑旧格式兼容用例，失败就直接结束，避免后续用例在坏状态上继续。
     if (LegacyTests.Run([Path.Combine(root, "legacy")]) != 0) return 1;
     await Downloads();
     await LargeEpub();
@@ -18,6 +21,7 @@ try
     TxtChapters();
     // A library of its own, so the derived pipe name cannot collide with an installed copy of the
     // reader running on the same machine.
+    // 独立书库派生独立管道名；服务端第一次接受、第二次拒绝，验证应答能原样回传给调用方。
     string controlRoot = Path.Combine(root, "control");
     using (var control = new CancellationTokenSource())
     {
@@ -33,10 +37,12 @@ try
     Check(await ControlChannel.TrySendAsync(controlRoot, ControlChannel.ShutdownCommand, TimeSpan.FromSeconds(2)) == null, "control channel reports silence once the server is gone");
     // A copy too old to serve the channel still holds the lock. That is the only way the launcher
     // can tell "nothing is running" apart from "something is running but will not answer".
+    // 锁文件探测只读已存在的文件，避免探针在程序抢锁的瞬间把锁抢走。
     Directory.CreateDirectory(controlRoot);
     Check(!ControlChannel.LockHeld(controlRoot), "an unlocked library is reported as free");
     using (var held = new FileStream(Path.Combine(controlRoot, "instance.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
         Check(ControlChannel.LockHeld(controlRoot), "a held library is reported as busy");
+    // 偏好与进度落盘、归档往返与合并：重复导入不能覆盖目标库已有的进度。
     var original = new Store(Path.Combine(root, "original"));
     var book = original.Add("跨平台测试", "第一段😊\n第二段内容", "TXT");
     book.Position = 3; book.Bookmark = 6;
@@ -52,14 +58,17 @@ try
     Check(destination.Books[0].Position == 3 && destination.Books[0].Bookmark == 6, "archive retains progress and bookmark");
     destination.Books[0].Position = 1;
     Check(LibraryArchive.Import(destination, archive) == 0 && destination.Books[0].Position == 1, "archive merge preserves current progress of duplicate book");
+    // zip-slip：归档条目用 ../ 逃出目标目录时必须整包拒绝。
     string malicious = Path.Combine(root, "bad.zip");
     using (var zip = ZipFile.Open(malicious, ZipArchiveMode.Create)) zip.CreateEntry("../outside.txt");
     Reject(() => LibraryArchive.Import(destination, malicious), "archive path traversal rejected");
+    // 迁移只复制、可重入：上次中断后目标目录已有书籍缓存时重跑不能丢书。
     string partial = Path.Combine(root, "partial");
     Directory.CreateDirectory(Path.Combine(partial, "books"));
     File.Copy(Path.Combine(original.Root, "books", book.Id + ".txt"), Path.Combine(partial, "books", book.Id + ".txt"));
     DataPaths.MigrateLegacy(original.Root, partial);
     Check(new Store(partial).Books.Count == 1, "interrupted legacy migration can be retried");
+    // 主索引损坏时迁移应退回 state.legacy-backup.xml，保留最近一次可恢复的进度。
     string brokenPrimary = Path.Combine(root, "broken-primary");
     var recoverable = new Store(brokenPrimary);
     var recoveryBook = recoverable.Add("恢复书籍", "一二三四五六七八九", "TXT");
@@ -69,6 +78,7 @@ try
     DataPaths.MigrateLegacy(brokenPrimary, migratedRecovery);
     var recovery = new Store(migratedRecovery);
     Check(recovery.Books[0].Title == "恢复书籍" && recovery.Books[0].Position == 3, "legacy migration retains recoverable backup progress");
+    // 入口外壳的三种旧目录形态：package/data、扁平目录、空目录，以及未指定时检查程序目录。
     string elsewhere = Path.Combine(root, "elsewhere");
     string packagedLegacy = Path.Combine(root, "legacy-pack");
     Directory.CreateDirectory(Path.Combine(packagedLegacy, "data"));
@@ -86,15 +96,18 @@ try
     Directory.CreateDirectory(emptyLegacy);
     Check(DataPaths.ResolveLegacyRoot(emptyLegacy, elsewhere) == emptyLegacy, "absent legacy library falls back to the given root");
     Check(DataPaths.ResolveLegacyRoot(null, packagedLegacy) == Path.Combine(packagedLegacy, "data"), "unspecified legacy root still inspects the assembly directory");
+    // 归档先整体校验再合并：缺书籍缓存的包必须拒绝，且目标库保持原样。
     string incomplete = Path.Combine(root, "incomplete.zip");
     using (var zip = ZipFile.Open(incomplete, ZipArchiveMode.Create)) zip.CreateEntryFromFile(Path.Combine(original.Root, "state.xml"), "state.xml");
     int beforeCount = destination.Books.Count;
     Reject(() => LibraryArchive.Import(destination, incomplete), "incomplete archive rejected before merging");
     Check(destination.Books.Count == beforeCount && destination.Books[0].Position == 1, "failed archive validation leaves destination unchanged");
+    // 导出端也执行导入端的条目上限，避免生成自己都拒绝的包。
     var excessive = new Store(Path.Combine(root, "excessive"));
     excessive.Books.AddRange(Enumerable.Repeat(book, 5000));
     Reject(() => LibraryArchive.Export(excessive, Path.Combine(root, "excessive.zip")), "export obeys importer entry limit");
     Check(!File.Exists(Path.Combine(root, "excessive.zip")), "rejected export does not create unusable archive");
+    // 异步保存必须在第一次 await 前捕获状态；并发调用要串行化，后写的进度不能被旧快照覆盖。
     book.Position = 2;
     Task firstSave = original.SaveAsync();
     book.Position = 5;
@@ -175,6 +188,7 @@ static async Task Downloads()
 
 static void Chapters()
 {
+    // 章节识别按行首模式匹配；正文里的「第一回合」「第一节课」「第一章的内容」不能被当成标题。
     string text = "前言文字\n第一章 初见\n正文一\n第一回合 他输了\n第一节课 开始了\n第2章 重逢\n正文二\nChapter 3 Again\n正文三\n番外 后来\n正文四";
     var found = ChapterIndex.Find(text);
     Check(found.Select(chapter => chapter.Title).SequenceEqual(new[] { "开头", "第一章 初见", "第2章 重逢", "Chapter 3 Again", "番外 后来" }), "chapter headings are detected in order without false positives");
@@ -201,6 +215,7 @@ static void TruncatedEdge()
             // 79 个 ASCII 字符后紧跟一个 emoji（UTF-16 代理对）；80 字符截断正好会切成半个。
             Entry("a.xhtml", "<html><body><p>" + new string('a', 79) + "😊tail</p></body></html>");
         }
+        // 截断必须按文本元素边界回退，不能让章节标题以半个代理对结尾。
         var book = Importer.Read(path);
         Check(book.Chapters != null && book.Chapters.Count == 1, "surrogate edge fixture yields one chapter");
         string title = book.Chapters[0].Title;
@@ -215,6 +230,7 @@ static void TxtChapters()
     Directory.CreateDirectory(root);
     try
     {
+        // TXT 导入生成章节目录，并以 sidecar 文件随书库持久化。
         string path = Path.Combine(root, "novel.txt");
         File.WriteAllText(path, "第一章 开始\n正文\n第二章 继续\n正文", new UTF8Encoding(false));
         var book = Importer.Read(path);
@@ -320,6 +336,7 @@ static async Task LargeEpub()
                 writer.Write("\"><p>正文</p></div></body></html>");
             }
         }
+        // 进度回调只报告一次完成事件，而不是每个 spine 文件都报一次。
         var reports = new List<ImportProgress>();
         var imported = await Task.Run(() => Importer.Read(path, new SyncProgress<ImportProgress>(reports.Add)));
         Check(imported.Text == "正文", "EPUB expanded content above the old 24 MB limit imports");
@@ -328,16 +345,19 @@ static async Task LargeEpub()
     finally { File.Delete(path); }
 }
 
+// 同步 IProgress 实现，便于在 Task.Run 里直接收集导入进度。
 sealed class SyncProgress<T>(Action<T> report) : IProgress<T>
 {
     public void Report(T value) => report(value);
 }
 
+// 用委托构造的 HttpMessageHandler，避免每个下载用例都启动真实网络。
 sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> response) : HttpMessageHandler
 {
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => response(request, cancellationToken);
 }
 
+// 无限重复字节流，模拟没有 Content-Length 的响应，验证流式读取上限。
 sealed class RepeatedStream(long remaining) : Stream
 {
     public override bool CanRead => true;
