@@ -39,7 +39,8 @@ jobs:
         shell: pwsh
         run: |
           ./build/package-windows.ps1
-          ./tests/Test-WindowsPackage.ps1 -Package ./artifacts/NengliangReader-win-x64.zip
+          $zip = Get-ChildItem ./artifacts/NengliangReader-*-win-x64.zip | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          ./tests/Test-WindowsPackage.ps1 -Package $zip.FullName
       - if: runner.os == 'macOS'
         run: |
           bash build/package-macos.sh ${{ matrix.rid }}

@@ -3,10 +3,14 @@ $ErrorActionPreference = 'Stop'
 $readerTestRoot = Join-Path ([IO.Path]::GetFullPath('artifacts')) ('Windows 打包测试 ' + [Guid]::NewGuid().ToString('N'))
 $readerUnpacked = Join-Path $readerTestRoot '解压 目录'
 Expand-Archive -LiteralPath $Package -DestinationPath $readerUnpacked
-$readerEntries = @(Get-ChildItem -LiteralPath $readerUnpacked | Select-Object -ExpandProperty Name)
-if (@(Compare-Object @('良子小窗.exe', 'README.md', 'app') $readerEntries).Count) { throw 'Unexpected package root entries.' }
+$readerRootItems = @(Get-ChildItem -LiteralPath $readerUnpacked)
+if ($readerRootItems.Count -ne 1 -or !$readerRootItems[0].PSIsContainer) { throw 'Expected a single versioned package folder.' }
+$readerPackage = $readerRootItems[0].FullName
+if ($readerRootItems[0].Name -notmatch '^NengliangReader-v.+?-win-x64$') { throw "Unexpected package folder: $($readerRootItems[0].Name)" }
+$readerEntries = @(Get-ChildItem -LiteralPath $readerPackage | Select-Object -ExpandProperty Name)
+if (@(Compare-Object @('良子小窗.exe', 'README.md', 'app') $readerEntries).Count) { throw 'Unexpected package folder entries.' }
 $readerStart = [Diagnostics.ProcessStartInfo]::new()
-$readerStart.FileName = Join-Path $readerUnpacked '良子小窗.exe'
+$readerStart.FileName = Join-Path $readerPackage '良子小窗.exe'
 $readerStart.WorkingDirectory = $readerTestRoot
 $readerStart.UseShellExecute = $false
 $readerStart.WindowStyle = 'Hidden'
@@ -42,5 +46,5 @@ Write-Host "Package layout, Unicode paths, relative arguments, desktop/chat smok
 
 # 上面验的是打包产物本身，这里接着验团队部署用的启动 / 停止脚本 —— 它把这份产物复制到自己的
 # 临时代码目录里再跑一遍，所以顺带证明了「脚本装的这一份」也能起来、也能被优雅停掉。
-& (Join-Path $PSScriptRoot 'Test-ReaderScripts.ps1') -AppDirectory (Join-Path $readerUnpacked 'app')
+& (Join-Path $PSScriptRoot 'Test-ReaderScripts.ps1') -AppDirectory (Join-Path $readerPackage 'app')
 Write-Host "Start/stop script contract passed. Evidence: $readerTestRoot"

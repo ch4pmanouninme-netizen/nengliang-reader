@@ -53,7 +53,7 @@ if [[ -n "${MACOS_SIGN_IDENTITY:-}" ]]; then
   codesign --verify --deep --strict "$app"
   suffix=""
 fi
-dmg="artifacts/NengliangReader-$rid$suffix.dmg"
+dmg="artifacts/NengliangReader-v$version-$rid$suffix.dmg"
 # A separate staging directory keeps build outputs out of the DMG root.
 dmg_stage="$(mktemp -d "${TMPDIR:-/tmp}/nengliang-dmg.XXXXXX")"
 trap 'rm -rf -- "$dmg_stage"' EXIT

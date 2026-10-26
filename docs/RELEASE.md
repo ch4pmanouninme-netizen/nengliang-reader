@@ -28,7 +28,8 @@ Windows，使用 PowerShell 7：
 
 ```powershell
 ./build/package-windows.ps1
-./tests/Test-WindowsPackage.ps1 -Package ./artifacts/NengliangReader-win-x64.zip
+$zip = Get-ChildItem ./artifacts/NengliangReader-*-win-x64.zip | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+./tests/Test-WindowsPackage.ps1 -Package $zip.FullName
 ```
 
 macOS，在 Mac 上执行：
@@ -40,9 +41,9 @@ bash build/package-macos.sh osx-x64
 
 输出到 `artifacts/`。Mac 构建包含 `.app` 和 DMG；Intel 与 Apple Silicon 分开发行。跨架构构建只验证打包，不等于在对应架构运行过。
 
-Windows ZIP 根目录仅包含 `良子小窗.exe`、`README.md` 和 `app/`。SDK 原生 apphost 直接加载 `app/NengliangReader.dll`，保留命令行参数和退出码，不启动额外的代理进程；根目录 EXE 可用于桌面快捷方式和 `--server`。依赖、许可证与完整文档位于 `app/`。每次打包使用独立目录，防止旧的平铺文件混入 ZIP。请在 Windows x64 上运行打包脚本。
+Windows 包名和顶层文件夹都带版本号（如 `NengliangReader-v2.3.9-win-x64.zip` 解压为 `NengliangReader-v2.3.9-win-x64/`），文件夹内包含 `良子小窗.exe`、`README.md` 和 `app/`。SDK 原生 apphost 直接加载 `app/NengliangReader.dll`，保留命令行参数和退出码，不启动额外的代理进程；文件夹根部的 EXE 可用于桌面快捷方式和 `--server`。依赖、许可证与完整文档位于 `app/`。每次打包使用独立的版本文件夹，防止旧文件混入 ZIP。请在 Windows x64 上运行打包脚本。
 
-DMG 根目录仅包含 `良子小窗.app`、指向 `/Applications` 的 `Applications` 快捷入口和 `README.md` 安装说明。用户将应用拖入快捷入口即可安装；运行依赖放在应用包的 `Contents/MacOS`，资源、许可证和完整文档放在 `Contents/Resources`。DMG 使用独立临时目录组装，避免混入其他构建输出。
+DMG 文件名带版本号（如 `NengliangReader-v2.3.9-osx-arm64-unsigned.dmg`）。DMG 根目录仅包含 `良子小窗.app`、指向 `/Applications` 的 `Applications` 快捷入口和 `README.md` 安装说明。用户将应用拖入快捷入口即可安装；运行依赖放在应用包的 `Contents/MacOS`，资源、许可证和完整文档放在 `Contents/Resources`。DMG 使用独立临时目录组装，避免混入其他构建输出。
 
 ## macOS 签名与公证
 

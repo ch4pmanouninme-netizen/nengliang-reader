@@ -3,8 +3,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 rid="${1:?Expected osx-arm64 or osx-x64}"
 case "$rid" in osx-arm64) arch=arm64 ;; osx-x64) arch=x86_64 ;; *) exit 2 ;; esac
-dmg="artifacts/NengliangReader-$rid-unsigned.dmg"
-if [[ -n "${MACOS_SIGN_IDENTITY:-}" ]]; then dmg="artifacts/NengliangReader-$rid.dmg"; fi
+version="$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' Directory.Build.props | tr -d '\r')"
+suffix="-unsigned"
+if [[ -n "${MACOS_SIGN_IDENTITY:-}" ]]; then suffix=""; fi
+dmg="artifacts/NengliangReader-v$version-$rid$suffix.dmg"
 hdiutil verify "$dmg"
 mount_dir="$(mktemp -d "${TMPDIR:-/tmp}/nengliang-check.XXXXXX")"
 mounted=false

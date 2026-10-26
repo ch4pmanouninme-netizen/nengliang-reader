@@ -1,5 +1,11 @@
 # 更新日志
 
+## 2.3.9 — 2026-10-26
+
+- 发布包文件名带版本号：Windows 为 `NengliangReader-v<版本>-win-x64.zip`，macOS 为 `NengliangReader-v<版本>-osx-arm64/x64[-unsigned].dmg`。
+- Windows ZIP 解压后保留一个以版本号命名的顶层文件夹，内部仍是 `良子小窗.exe`、`README.md` 和 `app/`；不再生成平铺结构。
+- 打包测试、CI、发布流程与下载说明同步更新。
+
 ## 2.3.8 — 2026-10-26
 
 - TXT 导入时生成章节索引并保存为 `books/<id>.chapters.tsv`，之后打开不再重新扫描全文；已有 TXT 书籍重新导入一次即可生成索引（不会产生重复书）。

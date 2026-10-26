@@ -1,6 +1,6 @@
 # 良子小窗 · macOS 安装说明
 
-1. 根据电脑芯片选择安装包：Apple Silicon（M 系列）使用 `osx-arm64`，Intel 使用 `osx-x64`。
+1. 安装包文件名带版本号和架构（如 `NengliangReader-v<版本>-osx-arm64-unsigned.dmg`）。根据电脑芯片选择：Apple Silicon（M 系列）使用 `osx-arm64`，Intel 使用 `osx-x64`。
 2. 打开 DMG，将「良子小窗.app」拖到旁边的「Applications」文件夹入口。
 3. 复制完成后弹出磁盘映像，从 Finder 的「应用程序」中打开「良子小窗」。
 
