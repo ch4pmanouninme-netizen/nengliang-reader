@@ -86,19 +86,21 @@ public static class LibraryArchive
             // Validate all texts before changing the destination library.
             var restored = new Store(staging);
             if (restored.RecoveryNotice.Length != 0) throw new InvalidDataException("备份中的书库索引损坏。");
-            var imported = restored.Books.Select(book => (Book: book, Text: restored.TextFor(book), Chapters: restored.ChaptersFor(book))).ToArray();
-            if (imported.Any(item => string.IsNullOrWhiteSpace(item.Text))) throw new InvalidDataException("备份包含空白书籍。");
+            // 先逐本校验，再逐本合并；同一时间只保留一本书的正文，避免大备份一次性驻留内存。
+            foreach (var backupBook in restored.Books)
+                if (string.IsNullOrWhiteSpace(restored.TextFor(backupBook))) throw new InvalidDataException("备份包含空白书籍。");
             store.Save();
             File.Copy(Path.Combine(store.Root, "state.xml"), Path.Combine(store.Root, "state.before-import.xml"), true);
             int added = 0;
-            foreach (var item in imported)
+            foreach (var backupBook in restored.Books)
             {
+                string text = restored.TextFor(backupBook);
                 int before = store.Books.Count;
-                var book = store.Add(item.Book.Title, item.Text, item.Book.Format, item.Chapters);
+                var book = store.Add(backupBook.Title, text, backupBook.Format, restored.ChaptersFor(backupBook));
                 if (store.Books.Count == before) continue;
-                book.Position = Store.Clamp(item.Book.Position, 0, Math.Max(0, item.Text.Length - 1));
-                book.Bookmark = item.Book.Bookmark < 0 ? -1 : Store.Clamp(item.Book.Bookmark, 0, Math.Max(0, item.Text.Length - 1));
-                book.Completed = item.Book.Completed; book.IsPinned = item.Book.IsPinned; book.Group = item.Book.Group; added++;
+                book.Position = Store.Clamp(backupBook.Position, 0, Math.Max(0, text.Length - 1));
+                book.Bookmark = backupBook.Bookmark < 0 ? -1 : Store.Clamp(backupBook.Bookmark, 0, Math.Max(0, text.Length - 1));
+                book.Completed = backupBook.Completed; book.IsPinned = backupBook.IsPinned; book.Group = backupBook.Group; added++;
             }
             // 分组清单也要跟着合并。只带入至少有一本书引用到的分组：空分组不跨库导入，
             // 与上面“逐本合并、重复书保留目的地组织”的语义保持一致。顺序沿用备份里的清单顺序。

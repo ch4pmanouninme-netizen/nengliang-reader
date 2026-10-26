@@ -424,17 +424,25 @@ namespace Reader.Chat
                 if (payload.Length == 0 || payload == "[DONE]") { if (payload.Length == 0) continue; break; }
                 string delta;
                 try { delta = Delta(payload); }
-                catch (InvalidDataException) { continue; }   // ignore keep-alive and comment frames
+                // 端点主动报告的错误必须抛出；只有无法解析的 data 帧才继续读下一行。
+                catch (AgentResponseException) { throw; }
+                catch (InvalidDataException) { continue; }
                 if (String.IsNullOrEmpty(delta)) continue;
                 onDelta(delta);
             }
+        }
+
+        // 端点主动返回的错误要和“无法解析的帧”区分开，否则会在流式读取里被当成 keep-alive 吞掉。
+        private sealed class AgentResponseException : InvalidDataException
+        {
+            public AgentResponseException(string message) : base(message) { }
         }
 
         private static string Delta(string json)
         {
             object root = AgentJson.Parse(json);
             string error = AgentJson.Text(root, "error", "message");
-            if (error != null) throw new InvalidDataException("Agent 返回错误：" + error);
+            if (error != null) throw new AgentResponseException("Agent 返回错误：" + error);
             return AgentJson.Text(root, "choices", "0", "delta", "content");
         }
 
@@ -442,7 +450,7 @@ namespace Reader.Chat
         {
             object root = AgentJson.Parse(json);
             string error = AgentJson.Text(root, "error", "message");
-            if (error != null) throw new InvalidDataException("Agent 返回错误：" + error);
+            if (error != null) throw new AgentResponseException("Agent 返回错误：" + error);
             string content = AgentJson.Text(root, "choices", "0", "message", "content");
             if (content == null) throw new InvalidDataException("Agent 返回的内容无法识别。");
             onDelta(content);

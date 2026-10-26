@@ -15,6 +15,7 @@ try
     Chapters();
     EpubToc();
     TruncatedEdge();
+    TxtChapters();
     // A library of its own, so the derived pipe name cannot collide with an installed copy of the
     // reader running on the same machine.
     string controlRoot = Path.Combine(root, "control");
@@ -204,6 +205,26 @@ static void TruncatedEdge()
         Check(book.Chapters != null && book.Chapters.Count == 1, "surrogate edge fixture yields one chapter");
         string title = book.Chapters[0].Title;
         Check(title.Length == 79 && !Char.IsHighSurrogate(title[^1]), "truncated chapter title never ends on a lone high surrogate");
+    }
+    finally { Directory.Delete(root, true); }
+}
+
+static void TxtChapters()
+{
+    string root = Path.Combine(Path.GetTempPath(), "txt-chapters-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    try
+    {
+        string path = Path.Combine(root, "novel.txt");
+        File.WriteAllText(path, "第一章 开始\n正文\n第二章 继续\n正文", new UTF8Encoding(false));
+        var book = Importer.Read(path);
+        Check(book.Chapters != null && book.Chapters.Count == 2 && book.Chapters[1].Title == "第二章 继续", "TXT import builds a chapter index");
+        var store = new Store(root);
+        var added = store.Add(book.Title, book.Text, book.Format, book.Chapters);
+        store.Save();
+        var reopened = new Store(root);
+        var stored = reopened.ChaptersFor(reopened.Books.Single(item => item.Id == added.Id));
+        Check(stored != null && stored.Count == 2 && stored[0].Title == "第一章 开始", "TXT chapter index persists as a sidecar");
     }
     finally { Directory.Delete(root, true); }
 }

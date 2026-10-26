@@ -184,6 +184,29 @@ try
     }
     jsonEndpoint.Stop();
 
+    // SSE 端点主动返回错误：必须作为失败提示广播，而不是被当成 keep-alive 吞掉。
+    var errorEndpoint = new TcpListener(IPAddress.Loopback, 0); errorEndpoint.Start();
+    int errorPort = ((IPEndPoint)errorEndpoint.LocalEndpoint).Port;
+    string errorEvents = "data: {\"error\":{\"message\":\"boom\"}}\r\n\r\ndata: [DONE]\r\n\r\n";
+    _ = Task.Run(() => ServeAgent(errorEndpoint, errorEvents, 1, new ConcurrentQueue<string>()));
+    string errorRoom = Guid.NewGuid().ToString("N").Substring(0, 12);
+    using (var errorCertificate = ChatSecurity.CreateCertificate())
+    using (var errorService = new ChatServer(errorRoom, new ChatOptions(sendBurst: 100), errorCertificate))
+    {
+        errorService.Start(IPAddress.Loopback, 0);
+        var errorSettings = new AgentOptions("http://127.0.0.1:" + errorPort + "/v1/chat", "test-key", "test-model", "小助手", "");
+        using var errorBridge = new AgentBridge(errorSettings, "127.0.0.1", errorService.Port, errorRoom, errorService.Fingerprint, new ChatOptions(sendBurst: 100));
+        using var errorAsker = new ChatConnection();
+        var errorSeen = new ConcurrentQueue<ChatPacket>();
+        errorAsker.Received += errorSeen.Enqueue;
+        await errorAsker.ConnectAsync("127.0.0.1", errorService.Port, "错误提问者", errorRoom, errorService.Fingerprint);
+        await Wait(() => errorService.Online == 2, "error-path agent joins the room", 25);
+        await errorAsker.SendAsync("@小助手 触发错误");
+        await Wait(() => errorSeen.Any(p => p.Kind == "message" && p.Text == "（助手回答失败）"), "agent endpoint errors are surfaced to the room", 25);
+        await Wait(() => errorBridge.Status.Contains("boom"), "agent status carries the endpoint error", 25);
+    }
+    errorEndpoint.Stop();
+
     // A bind to one specific address does not answer on loopback, so the bridge has to dial back the
     // address the service was actually handed. Hardcoding 127.0.0.1 stranded the assistant on every
     // LAN deployment while the service window still reported that it had joined the room.

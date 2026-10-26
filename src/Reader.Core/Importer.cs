@@ -69,7 +69,9 @@ public static class Importer
             catch (DecoderFallbackException) { text = Encoding.GetEncoding(54936).GetString(bytes); }
         }
         if (text.IndexOf('\0') >= 0) throw new InvalidDataException("文件包含二进制数据，无法按 TXT 阅读。");
-        ImportedBook book = new ImportedBook { Title = Path.GetFileNameWithoutExtension(path), Text = Normalize(text), Format = "TXT" };
+        string normalized = Normalize(text);
+        // TXT 没有书内目录：导入时算一次章节索引并随书保存，避免每次打开都重扫全文。
+        ImportedBook book = new ImportedBook { Title = Path.GetFileNameWithoutExtension(path), Text = normalized, Format = "TXT", Chapters = ChapterIndex.Find(normalized) };
         progress?.Report(new ImportProgress(1, 1));
         return book;
     }
