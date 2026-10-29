@@ -40,6 +40,8 @@ internal sealed class Hotkeys : IDisposable
         ["L"]=37,["J"]=38,["K"]=40,["N"]=45,["M"]=46,["Space"]=49,["Left"]=123,["Right"]=124,
         ["Up"]=126,["Down"]=125,["Home"]=115,["End"]=119,["PageUp"]=116,["PageDown"]=121,
         ["0"]=29,["1"]=18,["2"]=19,["3"]=20,["4"]=21,["5"]=23,["6"]=22,["7"]=26,["8"]=28,["9"]=25,
+        ["NumPad0"]=82,["NumPad1"]=83,["NumPad2"]=84,["NumPad3"]=85,["NumPad4"]=86,
+        ["NumPad5"]=87,["NumPad6"]=88,["NumPad7"]=89,["NumPad8"]=91,["NumPad9"]=92,
         ["F1"]=122,["F2"]=120,["F3"]=99,["F4"]=118,["F5"]=96,["F6"]=97,["F7"]=98,["F8"]=100,
         ["F9"]=101,["F10"]=109,["F11"]=103,["F12"]=111
     };
@@ -97,7 +99,7 @@ internal sealed class Hotkeys : IDisposable
 
     /// <summary>把 Avalonia 按键映射为受支持的键名。</summary>
     /// <param name="key">按下的物理按键。</param>
-    /// <returns>A–Z、0–9、F1–F12、方向键、Home/End/PageUp/PageDown、Space 之一；其它按键返回 null。</returns>
+    /// <returns>A–Z、0–9、小键盘 0–9、F1–F12、方向键、Home/End/PageUp/PageDown、Space 之一；其它按键返回 null。</returns>
     public static string? NameOf(Key key)
     {
         if (key >= Key.A && key <= Key.Z) return key.ToString();
@@ -105,6 +107,8 @@ internal sealed class Hotkeys : IDisposable
         if (key >= Key.F1 && key <= Key.F12) return key.ToString();
         return key switch
         {
+            Key.NumPad0 => "NumPad0", Key.NumPad1 => "NumPad1", Key.NumPad2 => "NumPad2", Key.NumPad3 => "NumPad3", Key.NumPad4 => "NumPad4",
+            Key.NumPad5 => "NumPad5", Key.NumPad6 => "NumPad6", Key.NumPad7 => "NumPad7", Key.NumPad8 => "NumPad8", Key.NumPad9 => "NumPad9",
             Key.Left => "Left", Key.Right => "Right", Key.Up => "Up", Key.Down => "Down",
             Key.Home => "Home", Key.End => "End", Key.PageUp => "PageUp", Key.PageDown => "PageDown",
             Key.Space => "Space", _ => null
@@ -245,6 +249,8 @@ internal sealed class Hotkeys : IDisposable
         string value = key.ToUpperInvariant();
         if (value.Length == 1) return value[0];
         if (value.StartsWith('F')) return 111 + uint.Parse(value[1..]);
+        // 小键盘数字：VK_NUMPAD0..VK_NUMPAD9 = 0x60..0x69。
+        if (value.StartsWith("NUMPAD") && uint.TryParse(value[6..], out uint pad) && pad <= 9) return 0x60 + pad;
         return value switch
         {
             "LEFT" => 0x25, "UP" => 0x26, "RIGHT" => 0x27, "DOWN" => 0x28,

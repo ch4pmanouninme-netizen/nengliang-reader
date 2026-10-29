@@ -40,7 +40,7 @@ internal sealed class HotkeyWindow : Window
         CanResize = false; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var rows = new StackPanel { Margin = new Thickness(24), Spacing = 10 };
         rows.Children.Add(new TextBlock { Text = "先点中一行，再直接按下想用的组合键（至少包含一个修饰键）。", TextWrapping = TextWrapping.Wrap });
-        rows.Children.Add(new TextBlock { Text = "支持 A–Z、0–9、F1–F12、方向键、Home/End/PageUp/PageDown、Space；组合键互不相同。✕ 清除该行绑定，该功能不再有全局快捷键。", FontSize = 12, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Gray });
+        rows.Children.Add(new TextBlock { Text = "支持 A–Z、0–9、小键盘 0–9、F1–F12、方向键、Home/End/PageUp/PageDown、Space；组合键互不相同。全局快捷键必须包含一个非修饰键，系统接口也不区分左右 Ctrl/Alt/Shift。✕ 清除该行绑定。", FontSize = 12, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Gray });
         // 每行固定四列：功能名、只读输入框、重置按钮、错误/提示。
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("64,*,Auto,150") };
         for (int index = 0; index < boxes.Length; index++)
@@ -120,8 +120,13 @@ internal sealed class HotkeyWindow : Window
     private void Capture(KeyEventArgs e)
     {
         if (e.Key == Key.Escape) return;
-        // 修饰键本身不是主键，等用户继续按。
-        if (e.Key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift) return;
+        // 修饰键本身不是主键；系统热键接口也不支持仅由修饰键组成的组合。
+        if (e.Key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift)
+        {
+            hint = "还需要一个非修饰键（系统不支持仅修饰键组合）";
+            Refresh();
+            return;
+        }
         string? name = Hotkeys.NameOf(e.Key);
         if (name == null) { hint = "不支持的按键"; Refresh(); return; }
         string? gesture = Hotkeys.FromInput(name, e.KeyModifiers);

@@ -173,8 +173,12 @@ internal static class DesktopSmokeTests
         Check(keys[0].Text == Hotkeys.Display("Ctrl+Alt+F9"), "unsupported keys are ignored instead of replacing the value");
         Press(0, Key.F9, KeyModifiers.None);
         Check(keys[0].Text == Hotkeys.Display("Ctrl+Alt+F9") && hkErrors[0].Text!.Contains("至少需要一个修饰键"), "capture without a modifier is refused with a hint");
+        Press(0, Key.RightCtrl, KeyModifiers.Control);
+        Check(hkErrors[0].Text!.Contains("非修饰键"), "modifier-only chords are refused with an explanation");
         Press(0, Key.F9, KeyModifiers.Control | KeyModifiers.Shift);
         Check(keys[0].Text == Hotkeys.Display("Ctrl+Shift+F9") && saveHotkeys.IsEnabled, "a different modifier combination is accepted");
+        Press(0, Key.NumPad0, KeyModifiers.Control);
+        Check(keys[0].Text == Hotkeys.Display("Ctrl+NumPad0") && saveHotkeys.IsEnabled, "numpad keys can be used in a combination");
         // Row 1 already holds Ctrl+Alt+Right, so recording that exact combination into row 0 has to flag both rows.
         Press(0, Key.Right, KeyModifiers.Control | KeyModifiers.Alt);
         Check(keys[0].Text == Hotkeys.Display("Ctrl+Alt+Right") && !saveHotkeys.IsEnabled, "a combination already used by another row is refused");
