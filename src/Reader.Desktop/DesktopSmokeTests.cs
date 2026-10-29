@@ -168,16 +168,16 @@ internal static class DesktopSmokeTests
         hotkeyUi.Select(1);
         Check(hkErrors[1].Text!.Contains("组合键") && hkErrors[0].Text == "", "the selected row shows where the next key lands");
         Press(0, Key.F9, KeyModifiers.Control | KeyModifiers.Alt);
-        Check(keys[0].Text == "Ctrl + Alt + F9" && saveHotkeys.IsEnabled, "holding modifiers records the full combination");
+        Check(keys[0].Text == Hotkeys.Display("Ctrl+Alt+F9") && saveHotkeys.IsEnabled, "holding modifiers records the full combination");
         Press(0, Key.Tab, KeyModifiers.Control | KeyModifiers.Alt);
-        Check(keys[0].Text == "Ctrl + Alt + F9", "unsupported keys are ignored instead of replacing the value");
+        Check(keys[0].Text == Hotkeys.Display("Ctrl+Alt+F9"), "unsupported keys are ignored instead of replacing the value");
         Press(0, Key.F9, KeyModifiers.None);
-        Check(keys[0].Text == "Ctrl + Alt + F9" && hkErrors[0].Text!.Contains("至少需要一个修饰键"), "capture without a modifier is refused with a hint");
+        Check(keys[0].Text == Hotkeys.Display("Ctrl+Alt+F9") && hkErrors[0].Text!.Contains("至少需要一个修饰键"), "capture without a modifier is refused with a hint");
         Press(0, Key.F9, KeyModifiers.Control | KeyModifiers.Shift);
-        Check(keys[0].Text == "Ctrl + Shift + F9" && saveHotkeys.IsEnabled, "a different modifier combination is accepted");
+        Check(keys[0].Text == Hotkeys.Display("Ctrl+Shift+F9") && saveHotkeys.IsEnabled, "a different modifier combination is accepted");
         // Row 1 already holds Ctrl+Alt+Right, so recording that exact combination into row 0 has to flag both rows.
         Press(0, Key.Right, KeyModifiers.Control | KeyModifiers.Alt);
-        Check(keys[0].Text == "Ctrl + Alt + Right" && !saveHotkeys.IsEnabled, "a combination already used by another row is refused");
+        Check(keys[0].Text == Hotkeys.Display("Ctrl+Alt+Right") && !saveHotkeys.IsEnabled, "a combination already used by another row is refused");
         Check(hkErrors[0].Text == "与其他行重复" && hkErrors[1].Text == "与其他行重复", "both rows of a duplicate are flagged");
         Press(0, Key.F9, KeyModifiers.Control | KeyModifiers.Alt);
         Check(saveHotkeys.IsEnabled && hkErrors.Skip(1).All(error => error.Text == ""), "resolving the duplicate clears the other rows");
@@ -190,7 +190,7 @@ internal static class DesktopSmokeTests
         clearIcons[4].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Check(keys[4].Text == "" && saveHotkeys.IsEnabled, "clearing one row unbinds it without blocking the save");
         hotkeyUi.Select(4); hotkeyUi.Reset(4);
-        Check(keys[4].Text == "Ctrl + Alt + Space" && keys[3].Text == "Ctrl + Alt + M", "resetting a row restores only that row's default");
+        Check(keys[4].Text == Hotkeys.Display("Ctrl+Alt+Space") && keys[3].Text == Hotkeys.Display("Ctrl+Alt+M"), "resetting a row restores only that row's default");
         hotkeyUi.Select(4); hotkeyUi.Clear(4);
         saveHotkeys.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Check(hotkeyUi.Result is ["Ctrl+Alt+F9", "Ctrl+Alt+Right", "Ctrl+Alt+Left", "Ctrl+Alt+M", ""], "an unbound row is saved as an empty slot");
@@ -209,7 +209,7 @@ internal static class DesktopSmokeTests
         var markedErrors = Field<TextBlock[]>(marked, "errors");
         Check(markedErrors[1].Text!.Contains("注册失败"), "a failed registration is flagged on its own row");
         Check(!markedErrors[0].Text!.Contains("注册失败"), "rows that registered stay unmarked");
-        Field<TextBox[]>(marked, "boxes")[1].Text = "Ctrl + Alt + F8";
+        Field<TextBox[]>(marked, "boxes")[1].Text = Hotkeys.Display("Ctrl+Alt+F8");
         Check(markedErrors[1].Text == "", "editing a row clears its stale failure mark");
         marked.Close();
         // 先探测一个空闲端口，避免测试与机器上已有服务冲突。
