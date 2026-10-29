@@ -153,7 +153,7 @@ internal static class DesktopSmokeTests
         held.Resume();
         Check(held.FailedCount == 0, "resume takes the hotkeys back");
         held.Dispose();
-        var hotkeyUi = new HotkeyWindow(["H", "Right", "Left", "M", "Space"]);
+        var hotkeyUi = new HotkeyWindow(Hotkeys.Defaults);
         var keys = Field<TextBox[]>(hotkeyUi, "boxes");
         var saveHotkeys = Field<Button>(hotkeyUi, "save");
         var hkErrors = Field<TextBlock[]>(hotkeyUi, "errors");
@@ -166,45 +166,50 @@ internal static class DesktopSmokeTests
         }
         Check(saveHotkeys.IsEnabled, "hotkey dialog accepts the defaults");
         hotkeyUi.Select(1);
-        Check(hkErrors[1].Text!.Contains("按") && hkErrors[0].Text == "", "the selected row shows where the next key lands");
+        Check(hkErrors[1].Text!.Contains("组合键") && hkErrors[0].Text == "", "the selected row shows where the next key lands");
         Press(0, Key.F9, KeyModifiers.Control | KeyModifiers.Alt);
-        Check(keys[0].Text == "F9" && saveHotkeys.IsEnabled, "holding the modifier combo records the pressed key");
-        Press(0, Key.D1, KeyModifiers.Control | KeyModifiers.Alt);
-        Check(keys[0].Text == "F9", "unsupported keys are ignored instead of replacing the value");
+        Check(keys[0].Text == "Ctrl + Alt + F9" && saveHotkeys.IsEnabled, "holding modifiers records the full combination");
+        Press(0, Key.Tab, KeyModifiers.Control | KeyModifiers.Alt);
+        Check(keys[0].Text == "Ctrl + Alt + F9", "unsupported keys are ignored instead of replacing the value");
         Press(0, Key.F9, KeyModifiers.None);
-        Check(keys[0].Text == "F9" && hkErrors[0].Text!.Contains("需同时按住"), "capture without the modifier combo is refused with a hint");
-        // Row 1 already holds "Right", so recording Right into row 0 has to flag both rows.
+        Check(keys[0].Text == "Ctrl + Alt + F9" && hkErrors[0].Text!.Contains("至少需要一个修饰键"), "capture without a modifier is refused with a hint");
+        Press(0, Key.F9, KeyModifiers.Control | KeyModifiers.Shift);
+        Check(keys[0].Text == "Ctrl + Shift + F9" && saveHotkeys.IsEnabled, "a different modifier combination is accepted");
+        // Row 1 already holds Ctrl+Alt+Right, so recording that exact combination into row 0 has to flag both rows.
         Press(0, Key.Right, KeyModifiers.Control | KeyModifiers.Alt);
-        Check(keys[0].Text == "Right" && !saveHotkeys.IsEnabled, "a key already used by another row is refused");
+        Check(keys[0].Text == "Ctrl + Alt + Right" && !saveHotkeys.IsEnabled, "a combination already used by another row is refused");
         Check(hkErrors[0].Text == "与其他行重复" && hkErrors[1].Text == "与其他行重复", "both rows of a duplicate are flagged");
         Press(0, Key.F9, KeyModifiers.Control | KeyModifiers.Alt);
         Check(saveHotkeys.IsEnabled && hkErrors.Skip(1).All(error => error.Text == ""), "resolving the duplicate clears the other rows");
         hotkeyUi.Show();
         await Task.Delay(200);
         Capture(hotkeyUi, Path.Combine(store.Root, "hotkeys.png"));
-        // 每行的清除图标解绑该功能，空位必须仍然可保存；重置只恢复这一行的默认键。
+        // 每行的清除图标解绑该功能，空位必须仍然可保存；重置只恢复这一行的默认组合键。
         var clearIcons = keys.Select(box => box.InnerRightContent).OfType<Button>().ToArray();
         Check(clearIcons.Length == 5 && clearIcons[4].Name == "Clear4", "every row carries its own clear icon inside the box");
         clearIcons[4].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Check(keys[4].Text == "" && saveHotkeys.IsEnabled, "clearing one row unbinds it without blocking the save");
         hotkeyUi.Select(4); hotkeyUi.Reset(4);
-        Check(keys[4].Text == "Space" && keys[3].Text == "M", "resetting a row restores only that row's default");
+        Check(keys[4].Text == "Ctrl + Alt + Space" && keys[3].Text == "Ctrl + Alt + M", "resetting a row restores only that row's default");
         hotkeyUi.Select(4); hotkeyUi.Clear(4);
         saveHotkeys.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        Check(hotkeyUi.Result is ["F9", "Right", "Left", "M", ""], "an unbound row is saved as an empty slot");
+        Check(hotkeyUi.Result is ["Ctrl+Alt+F9", "Ctrl+Alt+Right", "Ctrl+Alt+Left", "Ctrl+Alt+M", ""], "an unbound row is saved as an empty slot");
         hotkeyUi.Close();
-        // 未绑定的空位能从文件里读回、不注册，其余按键照常注册。
-        File.WriteAllText(Path.Combine(store.Root, "hotkeys.json"), "[\"F9\",\"Right\",\"Left\",\"M\",\"\"]");
-        var unbound = new Hotkeys(store.Root, _ => { });
-        Check(unbound.Keys[4].Length == 0 && unbound.FailedCount == 0, "an unbound slot loads and registers nothing while the rest stay bound");
-        Check(unbound.FailedRows[4] == false, "an unbound slot is not reported as a registration failure");
-        unbound.Dispose();
+        // 旧版只存单键名的配置要自动迁移为 Ctrl+Alt + 键。
+        string legacyRoot = Path.Combine(store.Root, "legacy-hotkeys");
+        Directory.CreateDirectory(legacyRoot);
+        File.WriteAllText(Path.Combine(legacyRoot, "hotkeys.json"), "[\"F9\",\"Right\",\"Left\",\"M\",\"\"]");
+        var legacy = new Hotkeys(legacyRoot, _ => { });
+        Check(legacy.Keys[0] == "Ctrl+Alt+F9" && legacy.Keys[1] == "Ctrl+Alt+Right", "legacy bare keys migrate to Ctrl+Alt combinations");
+        Check(legacy.Keys[4].Length == 0 && legacy.FailedCount == 0, "an unbound slot loads and registers nothing while the rest stay bound");
+        Check(legacy.FailedRows[4] == false, "an unbound slot is not reported as a registration failure");
+        legacy.Dispose();
         // 注册失败只在快捷键窗口里标注，改了那一行就不再挂着过期的失败。
-        var marked = new HotkeyWindow(["H", "Right", "Left", "M", "Space"], [false, true, false, false, false]);
+        var marked = new HotkeyWindow(Hotkeys.Defaults, [false, true, false, false, false]);
         var markedErrors = Field<TextBlock[]>(marked, "errors");
         Check(markedErrors[1].Text!.Contains("注册失败"), "a failed registration is flagged on its own row");
         Check(!markedErrors[0].Text!.Contains("注册失败"), "rows that registered stay unmarked");
-        Field<TextBox[]>(marked, "boxes")[1].Text = "F8";
+        Field<TextBox[]>(marked, "boxes")[1].Text = "Ctrl + Alt + F8";
         Check(markedErrors[1].Text == "", "editing a row clears its stale failure mark");
         marked.Close();
         // 先探测一个空闲端口，避免测试与机器上已有服务冲突。

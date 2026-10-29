@@ -22,9 +22,9 @@ public sealed class WindowsIntegration : IDisposable
     public List<int> Failed { get; } = [];
 
     /// <summary>注册全局热键并启动消息循环。</summary>
-    /// <param name="bindings">热键 ID 与虚拟键码的对应关系。</param>
+    /// <param name="bindings">热键 ID、修饰键位与虚拟键码的对应关系；修饰键位使用 Win32 MOD_* 常量。</param>
     /// <param name="pressed">热键按下时的回调，在专用消息循环线程上调用。</param>
-    public WindowsIntegration(IReadOnlyList<(int Id, uint Key)> bindings, Action<int> pressed)
+    public WindowsIntegration(IReadOnlyList<(int Id, uint Modifiers, uint Key)> bindings, Action<int> pressed)
     {
         this.pressed = pressed;
         // 后台线程不阻止进程退出；构造等待 ready，保证调用方拿到对象时注册已完成。
@@ -33,15 +33,15 @@ public sealed class WindowsIntegration : IDisposable
         ready.Wait();
     }
 
-    private void Run(IReadOnlyList<(int Id, uint Key)> bindings)
+    private void Run(IReadOnlyList<(int Id, uint Modifiers, uint Key)> bindings)
     {
         threadId = GetCurrentThreadId();
         // Create this thread's message queue before publishing readiness.
         // PeekMessage 即使不取消息也会强制创建线程消息队列，否则后续 PostThreadMessage 可能失败。
         PeekMessage(out _, IntPtr.Zero, 0, 0, 0);
         foreach (var binding in bindings)
-            // 0x4003 = MOD_ALT | MOD_CONTROL | MOD_NOREPEAT；NOREPEAT 防止按住热键重复触发。
-            if (!RegisterHotKey(IntPtr.Zero, binding.Id, 0x4003, binding.Key)) Failed.Add(binding.Id);
+            // 0x4000 = MOD_NOREPEAT；防止按住热键重复触发，其余位由调用方按用户组合设置。
+            if (!RegisterHotKey(IntPtr.Zero, binding.Id, binding.Modifiers | 0x4000, binding.Key)) Failed.Add(binding.Id);
         ready.Set();
         // GetMessage 返回 0 表示收到 WM_QUIT；0x0312 = WM_HOTKEY，wParam 即注册时使用的 ID。
         while (GetMessage(out var message, IntPtr.Zero, 0, 0) > 0)

@@ -21,9 +21,9 @@ public sealed class MacIntegration : IDisposable
     public List<int> Failed { get; } = [];
 
     /// <summary>注册全局热键。</summary>
-    /// <param name="bindings">热键 ID 与虚拟键码的对应关系。</param>
+    /// <param name="bindings">热键 ID、Carbon 修饰键位与虚拟键码的对应关系。</param>
     /// <param name="pressed">热键按下时的回调，在应用事件循环线程上调用。</param>
-    public MacIntegration(IReadOnlyList<(int Id, uint Key)> bindings, Action<int> pressed)
+    public MacIntegration(IReadOnlyList<(int Id, uint Modifiers, uint Key)> bindings, Action<int> pressed)
     {
         callback = (_, nativeEvent, _) =>
         {
@@ -46,9 +46,9 @@ public sealed class MacIntegration : IDisposable
         foreach (var binding in bindings)
         {
             HotKeyId id = new() { Signature = 0x4e4c5244, Id = (uint)binding.Id };
-            // Control + Option. Uses registered hotkeys, not a global keystroke monitor.
-            // 0x1000 = controlKey，0x0800 = optionKey；系统级注册不依赖辅助功能权限。
-            if (RegisterEventHotKey(binding.Key, 0x1000 | 0x0800, id, target, 0, out var reference) == 0)
+            // 修饰键位由调用方按用户组合生成（controlKey/optionKey/shiftKey/cmdKey）；
+            // 系统级注册不依赖辅助功能权限。
+            if (RegisterEventHotKey(binding.Key, binding.Modifiers, id, target, 0, out var reference) == 0)
                 registrations.Add(reference);
             else Failed.Add(binding.Id);
         }

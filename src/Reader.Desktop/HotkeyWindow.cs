@@ -7,12 +7,13 @@ using Avalonia.Media;
 
 namespace Reader.Desktop;
 
-// 全局快捷键设置：点中一行后按住 Ctrl+Alt 按键录入。
-// 每行自带「重置」按钮（恢复该行默认键），输入框末尾的 ✕ 清除该行绑定。
+// 全局快捷键设置：点中一行后直接按下想用的组合键录入。
+// 每行自带「重置」按钮（恢复该行默认组合键），输入框末尾的 ✕ 清除该行绑定。
 /// <summary>
-/// 全局快捷键设置窗口：录入五个功能的组合键，校验重复/无效按键，并标注注册失败的行。
+/// 全局快捷键设置窗口：录入五个功能的组合键，校验重复/缺少修饰键/无效按键，并标注注册失败的行。
 /// </summary>
-/// <remarks>空槽位表示该功能不绑定；窗口只负责收集结果，实际注册由 <see cref="Hotkeys"/> 完成。</remarks>
+/// <remarks>组合键可自由选择 Ctrl / Alt / Shift / Win（Mac 为 Control / Option / Shift / Command），
+/// 但至少需要一个修饰键；空槽位表示该功能不绑定。窗口只负责收集结果，实际注册由 <see cref="Hotkeys"/> 完成。</remarks>
 internal sealed class HotkeyWindow : Window
 {
     private readonly TextBox[] boxes = new TextBox[Hotkeys.Functions.Length];
@@ -38,8 +39,8 @@ internal sealed class HotkeyWindow : Window
         Width = 600; SizeToContent = SizeToContent.Height; MinHeight = 260; MaxHeight = 650;
         CanResize = false; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var rows = new StackPanel { Margin = new Thickness(24), Spacing = 10 };
-        rows.Children.Add(new TextBlock { Text = $"先点中一行，再按住 {Hotkeys.Modifier} 按下要用的键。", TextWrapping = TextWrapping.Wrap });
-        rows.Children.Add(new TextBlock { Text = "支持 A–Z、F1–F12、Left、Right、Space，五个键互不相同；✕ 清除该行绑定，该功能不再有全局快捷键。", FontSize = 12, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Gray });
+        rows.Children.Add(new TextBlock { Text = "先点中一行，再直接按下想用的组合键（至少包含一个修饰键）。", TextWrapping = TextWrapping.Wrap });
+        rows.Children.Add(new TextBlock { Text = "支持 A–Z、0–9、F1–F12、方向键、Home/End/PageUp/PageDown、Space；组合键互不相同。✕ 清除该行绑定，该功能不再有全局快捷键。", FontSize = 12, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Gray });
         // 每行固定四列：功能名、只读输入框、重置按钮、错误/提示。
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("64,*,Auto,150") };
         for (int index = 0; index < boxes.Length; index++)
@@ -47,7 +48,7 @@ internal sealed class HotkeyWindow : Window
             int row = index;
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             var label = new TextBlock { Text = Hotkeys.Functions[index], VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 4, 12, 4) };
-            var box = new TextBox { Name = "Key" + index, Text = keys[index], IsReadOnly = true, Watermark = "未绑定", Margin = new Thickness(0, 4, 8, 4) };
+            var box = new TextBox { Name = "Key" + index, Text = Hotkeys.Display(keys[index]), IsReadOnly = true, Watermark = "未绑定", Margin = new Thickness(0, 4, 8, 4) };
             var clear = new Button
             {
                 Name = "Clear" + index, Content = "✕", Width = 20, Height = 20, Padding = new Thickness(0), FontSize = 11,
@@ -111,25 +112,23 @@ internal sealed class HotkeyWindow : Window
     private void Set(int row, string key)
     {
         hint = "";
-        boxes[row].Text = key;
+        boxes[row].Text = Hotkeys.Display(key);
         Refresh();
     }
 
-    // 录入：按住 Ctrl+Alt 再按键。Esc 放行以便关闭窗口；修饰键与不支持的键不改动原值。
+    // 录入完整组合键。Esc 放行以便关闭窗口；单独的修饰键、无修饰键或不受支持的键只提示，不改原值。
     private void Capture(KeyEventArgs e)
     {
         if (e.Key == Key.Escape) return;
+        // 修饰键本身不是主键，等用户继续按。
+        if (e.Key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift) return;
         string? name = Hotkeys.NameOf(e.Key);
-        if (name == null) return;
+        if (name == null) { hint = "不支持的按键"; Refresh(); return; }
+        string? gesture = Hotkeys.FromInput(name, e.KeyModifiers);
+        if (gesture == null) { hint = "至少需要一个修饰键"; Refresh(); return; }
         e.Handled = true;
-        if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Alt)) != (KeyModifiers.Control | KeyModifiers.Alt))
-        {
-            hint = $"需同时按住 {Hotkeys.Modifier}";
-            Refresh();
-            return;
-        }
         hint = "";
-        boxes[active].Text = name;
+        boxes[active].Text = Hotkeys.Display(gesture);
         Refresh();
     }
 
@@ -141,13 +140,13 @@ internal sealed class HotkeyWindow : Window
         for (int index = 0; index < names.Length; index++)
         {
             // 空串是「未绑定」，不是重复，也不影响保存。
-            string invalid = names[index] == null ? "无效按键"
+            string invalid = names[index] == null ? "无效组合键"
                 : names[index]!.Length > 0 && names.Count(name => name == names[index]) > 1 ? "与其他行重复" : "";
             if (invalid.Length > 0) valid = false;
             bool unregistered = invalid.Length == 0 && failed[index];
             errors[index].Text = invalid.Length > 0 ? invalid
                 : unregistered ? "注册失败（可能被其他程序占用）"
-                : index == active ? (hint.Length > 0 ? hint : $"按 {Hotkeys.Modifier} + 键") : "";
+                : index == active ? (hint.Length > 0 ? hint : "按下组合键") : "";
             errors[index].Foreground = invalid.Length > 0 || unregistered ? Brushes.OrangeRed : Brushes.Gray;
         }
         save.IsEnabled = valid;
