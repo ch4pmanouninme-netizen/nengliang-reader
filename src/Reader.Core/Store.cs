@@ -100,14 +100,15 @@ namespace Reader.Core;
                 Pref.Seconds = Clamp(Number(p, "seconds", 6), 2, 60);
                 Pref.LineCount = Clamp(Number(p, "lineCount", 1), 1, 10);
                 Pref.Opacity = Clamp(Number(p, "opacity", 100), 30, 100);
-                Pref.Theme = Clamp(Number(p, "theme", 4), 0, 11);
+                Pref.Theme = Clamp(Number(p, "theme", 4), 0, Preferences.AutoBackgroundTheme);
                 Pref.FontSize = Clamp(Number(p, "fontSize", 11), 9, 32);
                 Pref.FontName = (string)p.Attribute("fontName") ?? "Microsoft YaHei UI";
                 Pref.TopMost = (string)p.Attribute("topMost") != "false";
                 Pref.Stealth = (string)p.Attribute("stealth") != "false";
                 Pref.ClickThrough = (string)p.Attribute("clickThrough") == "true";
                 // 没有 uiDark 属性时按主题编号推断是否为深色界面。
-                Pref.UiDark = (string)p.Attribute("uiDark") == null ? Pref.Theme is 1 or 5 or >= 7 : (string)p.Attribute("uiDark") == "true";
+                // 自动融入背景不参与界面深色推断：它只是阅读配色，和界面明暗无关。
+                Pref.UiDark = (string)p.Attribute("uiDark") == null ? Pref.Theme is 1 or 5 or (>= 7 and <= 11) : (string)p.Attribute("uiDark") == "true";
                 Pref.ChatHost = (string)p.Attribute("chatHost") ?? "";
                 Pref.UiTheme = (string)p.Attribute("uiTheme") ?? "";
                 Pref.ReadingThemeId = (string)p.Attribute("readingThemeId") ?? "";

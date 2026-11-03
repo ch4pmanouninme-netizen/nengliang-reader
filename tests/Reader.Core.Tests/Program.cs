@@ -13,6 +13,13 @@ try
     Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
     // 先跑旧格式兼容用例，失败就直接结束，避免后续用例在坏状态上继续。
     if (LegacyTests.Run([Path.Combine(root, "legacy")]) != 0) return 1;
+    // 自动融入背景：底色取自屏幕，文字颜色按背景亮度决定，中间留滞回区间避免来回闪。
+    Check(Math.Abs(AutoBackground.Luminance(0, 0, 0)) < 0.001 && Math.Abs(AutoBackground.Luminance(255, 255, 255) - 1) < 0.001, "sampled colour converts to luminance");
+    Check(AutoBackground.UseLightText(false, 0.20), "a dark backdrop switches to light text");
+    Check(!AutoBackground.UseLightText(false, 0.90), "a bright backdrop uses dark text");
+    Check(!AutoBackground.UseLightText(true, 0.90), "a bright backdrop switches back to dark text");
+    Check(AutoBackground.UseLightText(true, 0.20), "a dark backdrop keeps light text");
+    Check(AutoBackground.UseLightText(false, 0.50) == false && AutoBackground.UseLightText(true, 0.50), "brightness inside the hysteresis band keeps the current text colour");
     await Downloads();
     await LargeEpub();
     Chapters();

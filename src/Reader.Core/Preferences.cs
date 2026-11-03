@@ -19,8 +19,10 @@ namespace Reader.Core;
         /// <summary>是否恢复上次保存的窗口位置；旧版本没有该属性时由 X/Y 推断。</summary>
         public bool HasPosition;
         /// <summary>窗口宽度、窗口坐标、自动翻页秒数、不透明度百分比、阅读主题编号、每页行数。</summary>
-        /// <remarks>坐标 -1 表示未定位；不透明度合法范围为 30–100。</remarks>
+        /// <remarks>坐标 -1 表示未定位；不透明度合法范围为 30–100；主题编号 0–11 为内置配色，12 为自动融入背景。</remarks>
         public int Width = 560, X = -1, Y = -1, Seconds = 6, Opacity = 100, Theme = 4, LineCount = 1;
+        /// <summary>「自动融入背景」主题的编号：底色直接取阅读框中心处的屏幕像素颜色。</summary>
+        public const int AutoBackgroundTheme = 12;
         /// <summary>正文字号（磅）。</summary>
         public float FontSize = 11;
         /// <summary>正文字体名称。</summary>

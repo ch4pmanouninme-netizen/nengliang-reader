@@ -31,6 +31,12 @@ internal sealed class ReaderWindow : Window
     private readonly DispatcherTimer positionTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     // 拖动宽度时防抖重新分页，避免每一帧都重排。
     private readonly DispatcherTimer resizeTimer = new() { Interval = TimeSpan.FromMilliseconds(120) };
+    // 「自动融入背景」：定期取阅读条中心那一列上的屏幕像素，直接用作底色。
+    private readonly DispatcherTimer backdropTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private bool autoBackground, lightText;
+    // 最近一次采样到的底色；自动融入背景时正文就画在它上面。
+    private Color backdrop = Colors.White;
+    private DateTime lastBackdropSample;
     private readonly TextBlock footer = new() { FontSize = 10, Margin = new Thickness(8, 0, 8, 2), Foreground = Brushes.Gray };
     private ReadingPage? page;
     // 章节索引缓存；null 表示尚未加载。
@@ -119,6 +125,12 @@ internal sealed class ReaderWindow : Window
             preferences.X = Position.X; preferences.Y = Position.Y; preferences.HasPosition = true;
             // 窗口位置不影响阅读进度文案，只标脏，交给现有 2 秒保存定时器落盘。
             library.MarkDirtyOnly();
+            // 拖动会高频触发位置变化，节流后再按新位置重新采样背景。
+            if (autoBackground && DateTime.UtcNow - lastBackdropSample > TimeSpan.FromMilliseconds(400))
+            {
+                lastBackdropSample = DateTime.UtcNow;
+                RefreshAutoBackground();
+            }
         };
         PropertyChanged += (_, e) =>
         {
@@ -132,6 +144,7 @@ internal sealed class ReaderWindow : Window
         // 自动阅读在窗口隐藏或右键菜单打开时暂停，避免后台翻页。
         auto.Tick += (_, _) => { if (IsVisible && ContextMenu?.IsOpen != true) Move(true); else Pause(); };
         positionTimer.Tick += (_, _) => { if (IsVisible) EnsureVisible(); };
+        backdropTimer.Tick += (_, _) => RefreshAutoBackground();
         applying = true;
         // 恢复上次位置；首次打开则放在主屏右下角附近。
         if (preferences.HasPosition) Position = new PixelPoint(preferences.X, preferences.Y);
@@ -165,14 +178,26 @@ internal sealed class ReaderWindow : Window
             // 旧版阅读主题使用固定索引；官方主题优先按稳定 Id 匹配。
             Color[] colors = [Color.Parse("#f8f9f6"), Color.Parse("#303238"), Color.Parse("#f7efda"), Color.Parse("#e1e5e6"), Color.Parse("#f5f7fa"), Color.Parse("#2b2b2b"), Colors.Transparent, Color.Parse("#252526"), Color.Parse("#282c34"), Color.Parse("#253247"), Color.Parse("#121314"), Color.Parse("#1E1F22")];
             var official = UiThemes.Official.FirstOrDefault(x => x.Id == preferences.ReadingThemeId);
-            Background = new SolidColorBrush(official == null ? colors[Math.Clamp(preferences.Theme, 0, colors.Length - 1)] : Color.Parse(official.Background));
+            // 「自动融入背景」不套固定配色：底色由采样决定，这里先按当前值应用一次，随后由采样更新。
+            autoBackground = official == null && preferences.Theme == Preferences.AutoBackgroundTheme;
+            if (autoBackground)
+            {
+                ApplyAutoColors();
+                RefreshAutoBackground();
+                backdropTimer.Start();
+            }
+            else
+            {
+                backdropTimer.Stop();
+                Background = new SolidColorBrush(official == null ? colors[Math.Clamp(preferences.Theme, 0, colors.Length - 1)] : Color.Parse(official.Background));
+                bool dark = official?.Dark ?? (preferences.Theme is 1 or 5 or >= 7);
+                // 深色标记同时决定正文和页脚颜色；官方主题可以直接覆盖正文色。
+                surface.Ink = new SolidColorBrush(Color.Parse(official?.EditorForeground ?? (preferences.Theme switch { 8 => "#ABB2BF", 10 => "#BBBEBF", 11 => "#BCBEC4", _ => dark ? "#D4D4D4" : "#696969" })));
+                footer.Foreground = new SolidColorBrush(Color.Parse(official?.EditorForeground ?? (dark ? "#AAB2C0" : "#696969")));
+            }
             surface.Typeface = new Typeface(preferences.FontName);
             // 偏好中的字号以 pt 保存，Avalonia 使用 DIP，按 96/72 换算。
             surface.FontSize = preferences.FontSize * 96 / 72;
-            bool dark = official?.Dark ?? (preferences.Theme is 1 or 5 or >= 7);
-            // 深色标记同时决定正文和页脚颜色；官方主题可以直接覆盖正文色。
-            surface.Ink = new SolidColorBrush(Color.Parse(official?.EditorForeground ?? (preferences.Theme switch { 8 => "#ABB2BF", 10 => "#BBBEBF", 11 => "#BCBEC4", _ => dark ? "#D4D4D4" : "#696969" })));
-            footer.Foreground = new SolidColorBrush(Color.Parse(official?.EditorForeground ?? (dark ? "#AAB2C0" : "#696969")));
             footer.IsVisible = !preferences.Stealth;
             // 高度由行高、行数和可选页脚推导；极简模式不占页脚高度。
             Height = surface.LineHeight * preferences.LineCount + 12 + (preferences.Stealth ? 0 : 18);
@@ -182,6 +207,46 @@ internal sealed class ReaderWindow : Window
             if (TryGetPlatformHandle() != null) SetClickThrough(preferences.ClickThrough);
         }
         finally { applying = false; }
+    }
+
+    // 底色取自屏幕，文字颜色只有深浅两档：浅底用深灰，深底用浅灰。
+    private static readonly Color InkOnLight = Color.Parse("#696969"), InkOnDark = Color.Parse("#D4D4D4");
+
+    private void ApplyAutoColors()
+    {
+        // 底色直接用采样到的颜色；文字颜色按它的明暗选，保证在任意底色上都读得清。
+        Background = new SolidColorBrush(backdrop);
+        surface.Ink = new SolidColorBrush(lightText ? InkOnDark : InkOnLight);
+        footer.Foreground = new SolidColorBrush(lightText ? Color.Parse("#AAB2C0") : InkOnLight);
+    }
+
+    // 采样背景色并更新底色；颜色和文字明暗都没变时不重绘，避免每两秒闪一下。
+    private void RefreshAutoBackground()
+    {
+        if (!autoBackground || !IsVisible || closing) return;
+        if (!TrySampleBackdrop(out byte red, out byte green, out byte blue)) return;
+        Color sampled = Color.FromRgb(red, green, blue);
+        bool useLightText = AutoBackground.UseLightText(lightText, AutoBackground.Luminance(red, green, blue));
+        bool sameColor = Math.Abs(sampled.R - backdrop.R) <= 2 && Math.Abs(sampled.G - backdrop.G) <= 2 && Math.Abs(sampled.B - backdrop.B) <= 2;
+        if (useLightText == lightText && sameColor) return;
+        lightText = useLightText;
+        backdrop = sampled;
+        ApplyAutoColors();
+    }
+
+    // 阅读条本身不透明，抓不到它正下方的像素；改为采样紧贴窗口上、下两侧的窄条，
+    // 用相邻屏幕内容近似「文字下方的背景」。两条都取不到（比如贴在屏幕边缘）就放弃本次采样。
+    private bool TrySampleBackdrop(out byte red, out byte green, out byte blue)
+    {
+        red = green = blue = 0;
+        // 只取阅读框水平中心那一个像素，不做平均。窗口本身不透明、盖住了正中心，
+        // 所以取紧贴窗口上沿（不可用时取上沿外侧再退一格，或改取下沿）的同一列像素。
+        var scaling = DesktopScaling;
+        var origin = this.PointToScreen(new Point(0, 0));
+        int x = origin.X + Math.Max(0, (int)Math.Round(Bounds.Width * scaling / 2));
+        int below = origin.Y + (int)Math.Round(Bounds.Height * scaling) + 1;
+        return ScreenSampler.TrySampleColor(x, origin.Y - 1, 1, 1, out red, out green, out blue)
+            || ScreenSampler.TrySampleColor(x, below, 1, 1, out red, out green, out blue);
     }
 
     // 用真实排版测量一行是否能放进当前宽度（留出左右各 8 像素内边距）。
@@ -327,7 +392,7 @@ internal sealed class ReaderWindow : Window
     }
     /// <summary>彻底关闭阅读条：停止定时器、释放排版缓存并关闭窗口。</summary>
     /// <remarks>与隐藏不同，关闭后需要重新创建窗口实例。</remarks>
-    public void DisposeReader() { closing = true; auto.Stop(); resizeTimer.Stop(); positionTimer.Stop(); surface.ReleaseLayouts(); Close(); }
+    public void DisposeReader() { closing = true; auto.Stop(); resizeTimer.Stop(); positionTimer.Stop(); backdropTimer.Stop(); surface.ReleaseLayouts(); Close(); }
 }
 
 /// <summary>

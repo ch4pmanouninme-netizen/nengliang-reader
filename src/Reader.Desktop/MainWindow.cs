@@ -539,6 +539,14 @@ internal sealed partial class MainWindow : Window
                 if (home.IsVisible || home.Chat?.IsVisible == true) throw new InvalidOperationException("开始阅读没有收起主页或聊天窗口。");
                 if (reader?.IsVisible != true) throw new InvalidOperationException("开始阅读没有显示阅读条。");
             }
+            // 自动融入背景：切到该主题后底色由屏幕采样得到，必须是实色且采样过程不能抛异常。
+            int previousTheme = store.Pref.Theme;
+            store.Pref.Theme = Preferences.AutoBackgroundTheme;
+            reader.ApplyPreferences(); await Task.Delay(250);
+            if (reader.Background is not ISolidColorBrush { Color.A: 255 })
+                throw new InvalidOperationException("自动融入背景没有应用实色底色。");
+            store.Pref.Theme = previousTheme;
+            reader.ApplyPreferences();
             reader.Move(true); reader.Move(false); reader.ApplyPreferences();
             reader.SetClickThrough(true); reader.SetClickThrough(false);
             await Task.Delay(150);

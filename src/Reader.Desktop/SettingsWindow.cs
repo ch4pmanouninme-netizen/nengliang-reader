@@ -20,7 +20,7 @@ internal sealed class SettingsWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var rows = new StackPanel { Margin = new Thickness(24), Spacing = 12 };
         // 旧版内置主题按数字索引保存，官方主题按稳定 Id 保存；下拉框把两组顺序拼接，保存时再拆分。
-        string[] legacyThemes = { "浅色", "柔和深灰", "暖纸", "灰色", "企业微信浅色", "IDEA / PyCharm Darcula 风格", "透明文字", "VS Code Dark+ 风格", "One Dark 蓝灰", "柔和午夜蓝", "VS Code · 2026 深色", "PyCharm · 新版 Dark" };
+        string[] legacyThemes = { "浅色", "柔和深灰", "暖纸", "灰色", "企业微信浅色", "IDEA / PyCharm Darcula 风格", "透明文字", "VS Code Dark+ 风格", "One Dark 蓝灰", "柔和午夜蓝", "VS Code · 2026 深色", "PyCharm · 新版 Dark", "自动融入背景（直接取色）" };
         var officialIndex = Array.FindIndex(UiThemes.Official, x => x.Id == preferences.ReadingThemeId);
         var theme = new ComboBox { ItemsSource = legacyThemes.Concat(UiThemes.Official.Select(x => x.Group + " · " + x.Name)).ToArray(), SelectedIndex = officialIndex >= 0 ? legacyThemes.Length + officialIndex : preferences.Theme, HorizontalAlignment = HorizontalAlignment.Stretch };
         var font = new TextBox { Text = preferences.FontName };
@@ -43,7 +43,8 @@ internal sealed class SettingsWindow : Window
             preferences.Opacity = (int)(opacity.Value ?? 100); preferences.Seconds = (int)(seconds.Value ?? 6);
             preferences.TopMost = top.IsChecked == true; preferences.Stealth = minimal.IsChecked == true;
             // 旧主题使用数字索引，官方主题使用稳定 Id；未单独选择 UI 主题时按阅读主题推断明暗。
-            if (string.IsNullOrEmpty(preferences.UiTheme)) preferences.UiDark = UiThemes.Official.FirstOrDefault(x => x.Id == preferences.ReadingThemeId)?.Dark ?? (preferences.Theme is 1 or 5 or >= 7);
+            // 自动融入背景不参与推断：它只决定阅读配色，和界面明暗无关。
+            if (string.IsNullOrEmpty(preferences.UiTheme)) preferences.UiDark = UiThemes.Official.FirstOrDefault(x => x.Id == preferences.ReadingThemeId)?.Dark ?? (preferences.Theme is 1 or 5 or (>= 7 and <= 11));
             Close(true);
         };
         var cancel = new Button { Content = "取消", IsCancel = true };
