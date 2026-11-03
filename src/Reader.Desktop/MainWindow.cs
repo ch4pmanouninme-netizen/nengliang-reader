@@ -29,6 +29,9 @@ internal sealed partial class MainWindow : Window
     private readonly ProgressBar progress = new() { Minimum = 0, Maximum = 100, Height = 6 };
     private readonly TextBlock progressLabel = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
     private readonly WrapPanel actions = new() { Orientation = Orientation.Horizontal };
+    // 按钮行：左侧一组动作会换行，「开始阅读」钉在最右端。
+    private readonly DockPanel actionRow = new() { LastChildFill = true };
+    private readonly Button startReading = new() { Name = "StartReading", Content = "开始阅读", Margin = new Thickness(8, 0, 0, 8) };
     private readonly Button cancel = new() { Content = "取消下载", IsVisible = false };
     // 2 秒防抖：阅读位置、窗口位置等变化频繁，攒一批再落盘。
     private readonly DispatcherTimer saveTimer = new() { Interval = TimeSpan.FromSeconds(2) };
@@ -47,6 +50,8 @@ internal sealed partial class MainWindow : Window
     public Action? ShowHome { get; set; }
     /// <summary>全局隐藏/恢复所有模块窗口的回调，由主页注入。</summary>
     public Action? HideAll { get; set; }
+    /// <summary>收起主页与聊天窗口（不碰书库和阅读条）的回调，由 <see cref="HomeWindow"/> 注入。</summary>
+    public Action? CollapseModules { get; set; }
     /// <summary>主题变化后通知主页刷新的回调。</summary>
     public Action? ThemeChanged { get; set; }
     /// <summary>冒烟测试专用：保存主页实例，正常启动时为 null。</summary>
@@ -81,7 +86,7 @@ internal sealed partial class MainWindow : Window
         ButtonAction("主页", () => ShowHome?.Invoke());
         // 动作入口统一走 ButtonAction，包括带下拉的「书库备份」，保证一排按钮样式一致。
         ButtonAction("导入", () => _ = ImportDialog()); ButtonAction("链接下载", () => _ = DownloadDialog());
-        ButtonAction("显示", ShowReader); ButtonAction("设置", () => _ = Settings());
+        ButtonAction("设置", () => _ = Settings());
         ButtonAction("快捷键", () => _ = EditHotkeys());
         var backup = new MenuFlyout();
         var export = new MenuItem { Header = "导出书库" }; export.Click += async (_, _) => await Archive(false);
@@ -93,7 +98,10 @@ internal sealed partial class MainWindow : Window
         var progressRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         Grid.SetColumn(progress, 0); progressRow.Children.Add(progress);
         Grid.SetColumn(progressLabel, 1); progressRow.Children.Add(progressLabel);
-        var bottom = new StackPanel { Spacing = 10, Margin = new Thickness(0, 16, 0, 0), Children = { actions, cancel, progressRow, status } };
+        startReading.Click += (_, _) => StartReading();
+        DockPanel.SetDock(startReading, Dock.Right);
+        actionRow.Children.Add(startReading); actionRow.Children.Add(actions);
+        var bottom = new StackPanel { Spacing = 10, Margin = new Thickness(0, 16, 0, 0), Children = { actionRow, cancel, progressRow, status } };
         DockPanel.SetDock(bottom, Dock.Bottom); root.Children.Add(bottom);
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("190,20,*") };
         var shelf = new DockPanel { LastChildFill = true };
@@ -302,11 +310,11 @@ internal sealed partial class MainWindow : Window
     private async Task RunBusy(Func<Task> operation)
     {
         if (busy) return;
-        busy = true; actions.IsEnabled = books.IsEnabled = groupFilter.IsEnabled = false; reader?.Pause(); reader?.Hide();
+        busy = true; actionRow.IsEnabled = books.IsEnabled = groupFilter.IsEnabled = false; reader?.Pause(); reader?.Hide();
         try { if (pendingSave != null) await pendingSave; await operation(); }
         // 操作异常只显示在状态栏，窗口保持可用。
         catch (Exception ex) { status.Text = ex.Message; }
-        finally { busy = false; actions.IsEnabled = books.IsEnabled = groupFilter.IsEnabled = true; }
+        finally { busy = false; actionRow.IsEnabled = books.IsEnabled = groupFilter.IsEnabled = true; }
     }
 
     // 导出或导入整库备份；文件选择器与后台 IO 都包在 dialogOpen/RunBusy 中。
@@ -342,16 +350,23 @@ internal sealed partial class MainWindow : Window
 
     /// <summary>显示或创建阅读条，并隐藏书库窗口。</summary>
     /// <remarks>没有阅读会话、忙碌或对话框打开时不执行。</remarks>
-    public void ShowReader()
+    public bool ShowReader()
     {
-        if (session == null || busy || dialogOpen) return;
+        if (session == null || busy || dialogOpen) return false;
         try
         {
             // 阅读条按需创建，之后复用同一实例以保留窗口位置和设置。
             reader ??= new ReaderWindow(store.Pref, session, this);
             reader.Show(); reader.EnsureVisible(); reader.ApplyPreferences(); Hide();
+            return true;
         }
-        catch (Exception ex) { status.Text = "无法打开阅读条：" + ex.Message; }
+        catch (Exception ex) { status.Text = "无法打开阅读条：" + ex.Message; return false; }
+    }
+
+    // 「开始阅读」：显示阅读条，并把主页与聊天窗口一并收起来，只留阅读条。
+    private void StartReading()
+    {
+        if (ShowReader()) CollapseModules?.Invoke();
     }
 
     /// <summary>切换阅读条显示/隐藏；隐藏时暂停自动阅读并保存进度。</summary>
@@ -477,7 +492,7 @@ internal sealed partial class MainWindow : Window
     private async Task ExitAsync()
     {
         if (busy || dialogOpen || reader?.IsPrompting == true) { status.Text = "请先完成或取消当前操作。"; return; }
-        busy = true; actions.IsEnabled = books.IsEnabled = false; reader?.Pause(); reader?.Hide();
+        busy = true; actionRow.IsEnabled = books.IsEnabled = false; reader?.Pause(); reader?.Hide();
         bool saved;
         try
         {
@@ -485,7 +500,7 @@ internal sealed partial class MainWindow : Window
             // 保存过程中可能又有进度更新，循环直到一次保存期间没有新 revision。
             do { saved = await Persist(revision); } while (saved && dirty);
         }
-        finally { busy = false; actions.IsEnabled = books.IsEnabled = true; }
+        finally { busy = false; actionRow.IsEnabled = books.IsEnabled = true; }
         // 保存失败则恢复书库窗口，不退出进程。
         if (!saved) { RestoreLibrary(); return; }
         // 设置 exiting 后 Closing 不再拦截，Shutdown 才会真正结束进程。
@@ -515,6 +530,15 @@ internal sealed partial class MainWindow : Window
             Capture(this, "library.png");
             ShowReader();
             if (reader?.IsVisible != true) throw new InvalidOperationException(status.Text);
+            // 「开始阅读」还会把主页和聊天窗口一并收起来，只留阅读条。
+            if (SmokeHome is { } home)
+            {
+                RestoreLibrary(); home.Restore(); home.OpenChat(); await Task.Delay(150);
+                if (!home.IsVisible || home.Chat?.IsVisible != true) throw new InvalidOperationException("主页或聊天窗口没有打开。");
+                StartReading(); await Task.Delay(150);
+                if (home.IsVisible || home.Chat?.IsVisible == true) throw new InvalidOperationException("开始阅读没有收起主页或聊天窗口。");
+                if (reader?.IsVisible != true) throw new InvalidOperationException("开始阅读没有显示阅读条。");
+            }
             reader.Move(true); reader.Move(false); reader.ApplyPreferences();
             reader.SetClickThrough(true); reader.SetClickThrough(false);
             await Task.Delay(150);

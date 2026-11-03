@@ -42,7 +42,7 @@ internal sealed class HomeWindow : Window
         panel.Children.Add(new TextBlock { Text = "关闭主页会收进托盘或退出，可在设置中选择。聊天窗口关闭后断开，隐藏时保持连接。", TextWrapping = TextWrapping.Wrap });
         Content = panel;
         // 主页把窗口协调回调注入书库，避免书库直接依赖主页的具体实现。
-        library.ShowHome = Restore; library.HideAll = ToggleVisibility; library.ThemeChanged = ApplyTheme;
+        library.ShowHome = Restore; library.HideAll = ToggleVisibility; library.CollapseModules = HideModules; library.ThemeChanged = ApplyTheme;
         // 关闭主页先按用户选择收进托盘或退出；只有退出流程才放行 Closing。
         Closing += async (_, e) => { if (!exiting && IsVisible) { e.Cancel = true; await HandleClose(); } };
         KeyDown += (_, e) => { if (e.Key == Key.Escape) _ = HandleClose(); };
@@ -119,6 +119,12 @@ internal sealed class HomeWindow : Window
     }
     /// <summary>显示并激活主页窗口（从托盘或隐藏状态恢复）。</summary>
     public void Restore() { Show(); WindowState = WindowState.Normal; Activate(); }
+    // 「开始阅读」后收起主页与聊天窗口，屏幕只留阅读条。只是隐藏，聊天连接不受影响。
+    internal void HideModules()
+    {
+        if (chat?.IsVisible == true) chat.Hide();
+        if (IsVisible) Hide();
+    }
     /// <summary>打开聊天窗口；已有实例时复用，避免丢失连接状态。</summary>
     internal void OpenChat()
     {
