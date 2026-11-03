@@ -31,8 +31,9 @@ internal sealed class ReaderWindow : Window
     private readonly DispatcherTimer positionTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     // 拖动宽度时防抖重新分页，避免每一帧都重排。
     private readonly DispatcherTimer resizeTimer = new() { Interval = TimeSpan.FromMilliseconds(120) };
-    // 「自动融入背景」：定期取阅读条中心那一列上的屏幕像素，直接用作底色。
-    private readonly DispatcherTimer backdropTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    // 「自动融入背景」：高频取阅读条中心那一列上的屏幕像素，直接用作底色。
+    // 单点 BitBlt 是微秒级，100ms 轮询的开销可以忽略，切换才跟得上。
+    private readonly DispatcherTimer backdropTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private bool autoBackground, lightText;
     // 最近一次采样到的底色；自动融入背景时正文就画在它上面。
     private Color backdrop = Colors.White;
@@ -126,7 +127,7 @@ internal sealed class ReaderWindow : Window
             // 窗口位置不影响阅读进度文案，只标脏，交给现有 2 秒保存定时器落盘。
             library.MarkDirtyOnly();
             // 拖动会高频触发位置变化，节流后再按新位置重新采样背景。
-            if (autoBackground && DateTime.UtcNow - lastBackdropSample > TimeSpan.FromMilliseconds(400))
+            if (autoBackground && DateTime.UtcNow - lastBackdropSample > TimeSpan.FromMilliseconds(50))
             {
                 lastBackdropSample = DateTime.UtcNow;
                 RefreshAutoBackground();
@@ -136,7 +137,7 @@ internal sealed class ReaderWindow : Window
         {
             if (e.Property != IsVisibleProperty) return;
             // 只在可见时检查窗口是否还在屏幕内，隐藏期间不做无谓计算。
-            if (IsVisible) { positionTimer.Start(); EnsureVisible(); }
+            if (IsVisible) { positionTimer.Start(); EnsureVisible(); RefreshAutoBackground(); }
             else positionTimer.Stop();
         };
         // 关闭按钮不销毁窗口，只交给书库切换显示；DisposeReader 才真正关闭。
