@@ -186,7 +186,23 @@ internal sealed class HomeWindow : Window
         if (library.VisibleReader is { } reader) visible.Add(reader);
         // 隐藏前暂停自动阅读，避免后台继续翻页；记录集合供再次按下快捷键时恢复。
         if (visible.Count > 0) { hidden.Clear(); hidden.AddRange(visible); library.PauseReader(); foreach (var window in hidden) { window.Closed -= RemoveHidden; window.Closed += RemoveHidden; window.Hide(); } }
-        else if (hidden.Count > 0) { foreach (var window in hidden.ToArray()) window.Show(); hidden.Clear(); }
+        else if (hidden.Count > 0)
+        {
+            var restore = hidden.ToArray();
+            hidden.Clear();
+            foreach (var window in restore)
+            {
+                // 已关闭或正在关闭的窗口不应阻断其余窗口恢复。
+                try { window.Show(); } catch (Exception) { }
+            }
+            // 阅读条必须回到最前；否则主页/书库会盖住正文，看起来像文字丢失。
+            try
+            {
+                if (library.VisibleReader is { } reader) reader.Activate();
+                else restore.LastOrDefault(window => window.IsVisible)?.Activate();
+            }
+            catch (Exception) { }
+        }
         else Restore();
     }
     // 已隐藏的窗口被用户单独关闭时，不再参与后续恢复。

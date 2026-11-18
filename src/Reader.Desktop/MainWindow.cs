@@ -358,6 +358,9 @@ internal sealed partial class MainWindow : Window
             // 阅读条按需创建，之后复用同一实例以保留窗口位置和设置。
             reader ??= new ReaderWindow(store.Pref, session, this);
             reader.Show(); reader.EnsureVisible(); reader.ApplyPreferences(); Hide();
+            // 阅读时只保留阅读条：收起主页和聊天，避免它们盖住正文或混入全局隐藏/恢复集合。
+            CollapseModules?.Invoke();
+            reader.Activate();
             return true;
         }
         catch (Exception ex) { status.Text = "无法打开阅读条：" + ex.Message; return false; }
@@ -538,6 +541,11 @@ internal sealed partial class MainWindow : Window
                 StartReading(); await Task.Delay(150);
                 if (home.IsVisible || home.Chat?.IsVisible == true) throw new InvalidOperationException("开始阅读没有收起主页或聊天窗口。");
                 if (reader?.IsVisible != true) throw new InvalidOperationException("开始阅读没有显示阅读条。");
+                // 全局隐藏/恢复必须只恢复阅读条；主页一起恢复并置前会让用户看到主页而不是正文。
+                home.ToggleVisibility(); await Task.Delay(100);
+                if (reader?.IsVisible != false || home.IsVisible) throw new InvalidOperationException("全局隐藏没有收起阅读条和主页。");
+                home.ToggleVisibility(); await Task.Delay(100);
+                if (reader?.IsVisible != true || home.IsVisible) throw new InvalidOperationException("全局恢复没有把阅读条带回最前。");
             }
             // 自动融入背景：切到该主题后底色由屏幕采样得到，必须是实色且采样过程不能抛异常。
             int previousTheme = store.Pref.Theme;
