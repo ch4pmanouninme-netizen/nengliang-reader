@@ -132,7 +132,7 @@ TLS 保护客户端到服务端的传输，服务端可以读取消息，不是�
 | Windows | `%LOCALAPPDATA%\NengliangReader` |
 | macOS | `~/Library/Application Support/NengliangReader` |
 
-正文位于 `books/`（EPUB 还会保存 `<id>.chapters.tsv` 章节索引），进度与偏好位于 `state.xml`，快捷键位于 `hotkeys.json`。保存使用临时文件替换并保留 `.bak`；损坏时优先读取备份。旧版程序旁边的 `data/` 目录会在目标书库不存在时复制迁移，保留原文件。
+正文位于 `books/`（EPUB 还会保存 `<id>.chapters.tsv` 章节索引），进度与偏好位于 `state.xml`，快捷键位于 `hotkeys.json`。保存使用临时文件替换并保留 `.bak`；损坏时优先读取备份。旧版程序旁边的 `data/` 目录会在目标书库不存在时复制迁移，保留原文件。不要以管理员身份运行：管理员进程可能把数据目录标记为高完整性，之后普通权限无法写入。若已发生，按启动提示用管理员 PowerShell 执行 `icacls "<数据目录>" /setintegritylevel (OI)(CI)Medium /T /C` 修复。
 
 正常本地阅读不访问网络。链接下载访问目标服务器及重定向地址；聊天访问用户填写的服务地址；启动服务只监听所选网卡和端口；启用助手时会访问你填写的助手端点。不上传书库，不包含遥测或广告。开发时恢复依赖会连接 NuGet。聊天只保存地址、端口和昵称；不保存房间码、指纹和聊天正文。
 

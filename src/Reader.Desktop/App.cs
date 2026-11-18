@@ -4,6 +4,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using Reader.Core;
+using System.Diagnostics;
 
 namespace Reader.Desktop;
 
@@ -56,6 +57,9 @@ public sealed class App : Application
             {
                 string root = Program.DataDirectory ?? DataPaths.Default;
                 Directory.CreateDirectory(root);
+                // 管理员进程写入的文件会带 High 完整性标签，普通权限随后无法写入。
+                // 以管理员启动时先把数据目录及现有内容降回 Medium，避免之后必须一直用管理员运行。
+                RepairHighIntegrity(root);
                 try
                 {
                     // 以 FileShare.None 持有锁文件：第二个实例打开同一文件时会抛 IOException，从而实现单实例。
@@ -100,8 +104,15 @@ public sealed class App : Application
             {
                 // 启动中途失败时先释放已取得的实例锁，再显示错误窗口并延迟退出。
                 instance?.Dispose();
-                var error = new Window { Title = "良子阅读器 · 启动失败", Width = 520, Height = 220,
-                    Content = new TextBlock { Margin = new Thickness(24), TextWrapping = Avalonia.Media.TextWrapping.Wrap, Text = "无法打开书库。请检查是否已启动阅读器、数据目录权限或进度文件。\n\n" + ex.Message } };
+                // 管理员运行过的数据目录会被标成 High 完整性；普通权限无法写入时给出可直接执行的修复命令。
+                string dataRoot = Program.DataDirectory ?? DataPaths.Default;
+                string hint = ex is UnauthorizedAccessException
+                    ? "\n\n如果曾用管理员身份启动过，数据目录可能被标记为高完整性。请用管理员 PowerShell 执行：\n" +
+                      $"icacls \"{dataRoot}\" /setintegritylevel (OI)(CI)Medium /T /C\n" +
+                      "然后改用普通权限启动。"
+                    : "";
+                var error = new Window { Title = "良子阅读器 · 启动失败", Width = 520, Height = hint.Length > 0 ? 380 : 220,
+                    Content = new TextBlock { Margin = new Thickness(24), TextWrapping = Avalonia.Media.TextWrapping.Wrap, Text = "无法打开书库。请检查是否已启动阅读器、数据目录权限或进度文件。\n\n" + ex.Message + hint } };
                 error.Closed += (_, _) => desktop.Shutdown(1);
                 desktop.MainWindow = error;
             }
@@ -119,6 +130,33 @@ public sealed class App : Application
         if (target == null || !target.CanExit) return Task.FromResult(ControlChannel.Refused);
         Dispatcher.UIThread.Post(target.RequestExit);
         return Task.FromResult(ControlChannel.Accepted);
+    }
+
+    // 以管理员启动时把数据目录及现有文件的完整性级别降回 Medium。
+    // 普通权限无法修改 SACL，也不应该阻止启动，因此只在 Windows 且进程已提权时执行。
+    private static void RepairHighIntegrity(string root)
+    {
+        if (!OperatingSystem.IsWindows() || !Environment.IsPrivilegedProcess) return;
+        try
+        {
+            ProcessStartInfo start = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "icacls.exe"))
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+            };
+            start.ArgumentList.Add(root);
+            start.ArgumentList.Add("/setintegritylevel");
+            start.ArgumentList.Add("(OI)(CI)Medium");
+            start.ArgumentList.Add("/T");
+            start.ArgumentList.Add("/C");
+            using Process? process = Process.Start(start);
+            process?.WaitForExit(30000);
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+        {
+            // 修复失败不阻止启动；普通权限启动时会在错误窗口里给出手动修复命令。
+        }
     }
 
     // NativeMenu 只能由原生菜单项组成，这里统一创建并转发到动作。
