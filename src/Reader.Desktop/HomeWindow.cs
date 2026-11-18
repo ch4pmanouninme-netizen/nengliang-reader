@@ -198,7 +198,7 @@ internal sealed class HomeWindow : Window
             // 阅读条必须回到最前；否则主页/书库会盖住正文，看起来像文字丢失。
             try
             {
-                if (library.VisibleReader is { } reader) reader.Activate();
+                if (library.VisibleReader is { } readerWindow) readerWindow.Activate();
                 else restore.LastOrDefault(window => window.IsVisible)?.Activate();
             }
             catch (Exception) { }
